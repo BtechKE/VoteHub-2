@@ -11,6 +11,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <style>
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
     /* ================================================================
    TALLYHUB UI KIT — Shared across Admin / Agent / Aspirant
    Prefix: th- (TallyHub) to avoid collisions
@@ -2915,11 +2916,32 @@ async function saveStreams() {
   var count = parseInt(document.getElementById('m_streamCount').value, 10);
   if (!centreId || !count || count < 1) return toast('Invalid count.', 'error');
   
+  // 1. Find the Centre to get its Ward
   var centre = CENTRES.find(c => c.id === centreId);
-  const { error } = await db.rpc('admin_generate_streams', { p_centre_id: centreId, p_count: count, p_ward_id: centre.ward_id });
-  if (error) return toast(error.message, 'error');
+  if (!centre) return toast('Centre not found.', 'error');
   
-  toast('Streams generated.', 'success'); closeModal(); loadAllData();
+  // 2. Find the Ward to get its Constituency
+  var ward = WARDS.find(w => w.id === centre.ward_id);
+  if (!ward) return toast('Ward not found for this centre.', 'error');
+  
+  // 3. Find the Constituency to get its County
+  var constObj = CONSTITUENCIES.find(c => c.id === ward.constituency_id);
+  if (!constObj) return toast('Constituency not found for this ward.', 'error');
+
+  // 4. Call the V2 RPC with the full hierarchy
+  const { error } = await db.rpc('admin_generate_streams', { 
+    p_centre_id: centreId, 
+    p_count: count, 
+    p_ward_id: ward.id,
+    p_constituency_id: constObj.id,
+    p_county_id: constObj.county_id
+  });
+  
+  if (error) return toast('Failed: ' + error.message, 'error');
+  
+  toast('Streams generated.', 'success'); 
+  closeModal(); 
+  loadAllData();
 }
 function deleteStream(code) {
   thConfirm({ title: 'Delete stream?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
@@ -2941,16 +2963,24 @@ function openCandidateModal() {
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode"></div>
-     <div class="form-group"><label>Photo URL <span class="hint">(GitHub or Drive)</span></label><input id="m_candPhoto" placeholder="https://github.com/..."></div>
+     
+     <div class="form-group">
+       <label>Candidate Photo</label>
+       <div style="display:flex; align-items:center; gap:12px;">
+         <img id="m_candPhotoPreview" src="" style="width:50px; height:50px; border-radius:50%; object-fit:cover; display:none; border:1px solid #ccc;">
+         <input type="file" id="m_candPhotoFile" accept="image/*" style="padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; width:100%;" onchange="previewImage(event)">
+       </div>
+       <input type="hidden" id="m_candPhoto" value=""> <!-- Stores the URL -->
+     </div>
+
      <div class="form-group"><label>Color <span class="hint">(e.g. #FFC72C)</span></label><input id="m_candColor" placeholder="#A5CF83"></div>
      
      <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
      <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
      <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
      
-     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate()">Save</button></div>`);
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate()">Save</button></div>`);
 }
-
 function editCandidate(code) {
   var c = CANDIDATES.find(x => x.code === code); if (!c) return;
   
@@ -2959,20 +2989,43 @@ function editCandidate(code) {
   var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(co => `<option value="${co.id}" ${co.id===c.constituency_id?'selected':''}>${esc(co.name)}</option>`).join('');
   var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
   
+  var currentPhoto = normalizeImageUrl(c.photo_url);
+  var previewStyle = currentPhoto ? 'display:block;' : 'display:none;';
+
   openModal(modalHead('Edit Candidate', code) + 
     `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty" value="${escAttr(c.party)}"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode" value="${escAttr(c.code)}"></div>
-     <div class="form-group"><label>Photo URL</label><input id="m_candPhoto" value="${escAttr(c.photo_url||'')}"></div>
+     
+     <div class="form-group">
+       <label>Candidate Photo <span class="hint">(Leave blank to keep current)</span></label>
+       <div style="display:flex; align-items:center; gap:12px;">
+         <img id="m_candPhotoPreview" src="${currentPhoto}" style="width:50px; height:50px; border-radius:50%; object-fit:cover; ${previewStyle} border:1px solid #ccc;">
+         <input type="file" id="m_candPhotoFile" accept="image/*" style="padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; width:100%;" onchange="previewImage(event)">
+       </div>
+       <input type="hidden" id="m_candPhoto" value="${escAttr(c.photo_url||'')}"> <!-- Stores the old URL -->
+     </div>
+
      <div class="form-group"><label>Color</label><input id="m_candColor" value="${escAttr(c.color||'')}"></div>
      
      <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
      <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
      <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
      
-     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
   candPosChanged();
+}
+  function previewImage(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = document.getElementById('m_candPhotoPreview');
+    img.src = e.target.result;
+    img.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
 }
 function candPosChanged() { 
   var pos = document.getElementById('m_candPosition').value;
@@ -2990,8 +3043,9 @@ function candPosChanged() {
   var name = document.getElementById('m_candName').value.trim();
   var party = document.getElementById('m_candParty').value.trim();
   var code = document.getElementById('m_candCode').value.trim();
-  var photo = document.getElementById('m_candPhoto').value.trim();
   var color = document.getElementById('m_candColor').value.trim();
+  var photoFile = document.getElementById('m_candPhotoFile').files[0];
+  var existingPhotoUrl = document.getElementById('m_candPhoto').value;
 
   var county = document.getElementById('m_candCounty') ? document.getElementById('m_candCounty').value : null;
   var constId = document.getElementById('m_candConst') ? document.getElementById('m_candConst').value : null;
@@ -2999,7 +3053,6 @@ function candPosChanged() {
 
   if (!name || !party || !code) return toast('Fill name, party, and code.', 'error');
   
-  // Validate hierarchy based on position
   if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
     return toast('Please select a County for this position.', 'error');
   }
@@ -3009,27 +3062,70 @@ function candPosChanged() {
   if (pos === 'MCA' && !ward) {
     return toast('Please select a Ward for the MCA.', 'error');
   }
-  
-  // We save the raw URL, the UI will normalize it when reading
-  var payload = { 
-    position: pos, 
-    name: name, 
-    party: party, 
-    code: code, 
-    county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
-    constituency_id: (pos === 'MP') ? constId : null,
-    ward_id: (pos === 'MCA') ? ward : null,
-    photo_url: photo, 
-    color: color 
-  };
-  
-  var res;
-  if (oldCode) res = await db.from('candidates').update(payload).eq('code', oldCode);
-  else res = await db.from('candidates').insert(payload);
-  
-  if (res.error) return toast('Database error: ' + res.error.message, 'error');
 
-  toast('Saved.', 'success'); closeModal(); loadAllData();
+  var saveBtn = document.getElementById('m_candSaveBtn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing…';
+
+  var finalPhotoUrl = existingPhotoUrl;
+
+  try {
+    // --- 1. UPLOAD NEW PHOTO IF SELECTED ---
+    if (photoFile) {
+      saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing…';
+      
+      // Compress the image to max 0.2MB (200KB)
+      const options = { maxSizeMB: 0.2, maxWidthOrHeight: 800, useWebWorker: true };
+      const compressedFile = await imageCompression(photoFile, options);
+
+      saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading…';
+      
+      // Upload to Supabase Storage
+      const fileExt = compressedFile.name.split('.').pop();
+      const fileName = `${Date.now()}_${code}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadError } = await db.storage
+        .from('candidate-photos')
+        .upload(fileName, compressedFile);
+
+      if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
+
+      // Get the public URL
+      const { data: urlData } = db.storage.from('candidate-photos').getPublicUrl(fileName);
+      finalPhotoUrl = urlData.publicUrl;
+    }
+
+    // --- 2. SAVE CANDIDATE TO DATABASE ---
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+    
+    var payload = { 
+      position: pos, 
+      name: name, 
+      party: party, 
+      code: code, 
+      county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+      constituency_id: (pos === 'MP') ? constId : null,
+      ward_id: (pos === 'MCA') ? ward : null,
+      photo_url: finalPhotoUrl, 
+      color: color 
+    };
+    
+    var res;
+    if (oldCode) res = await db.from('candidates').update(payload).eq('code', oldCode);
+    else res = await db.from('candidates').insert(payload);
+    
+    if (res.error) throw new Error(res.error.message);
+
+    toast('Saved successfully.', 'success'); 
+    closeModal(); 
+    loadAllData();
+
+  } catch (err) {
+    console.error(err);
+    toast(err.message, 'error');
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = 'Save';
+  }
 }
 function deleteCandidate(code) {
   thConfirm({ title: 'Delete candidate?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
