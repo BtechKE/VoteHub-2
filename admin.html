@@ -3137,12 +3137,18 @@ async function saveAgent(id) {
 }
 function openAspirantModal() {
   var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
   
   openModal(modalHead('Add Aspirant', 'Grants live dashboard access') + `
     <div class="form-group"><label>Full Name</label><input id="m_aspName" placeholder="e.g. John Doe"></div>
     <div class="form-group"><label>Position</label><select id="m_aspPosition" onchange="aspPosChanged()">${posOpts}</select></div>
+    
+    <div class="form-group" id="m_aspCountyWrap" style="display:none;"><label>County</label><select id="m_aspCounty">${countyOpts}</select></div>
+    <div class="form-group" id="m_aspConstWrap" style="display:none;"><label>Constituency</label><select id="m_aspConst">${constOpts}</select></div>
     <div class="form-group" id="m_aspWardWrap" style="display:none;"><label>Ward <span class="hint">(required for MCA)</span></label><select id="m_aspWard">${wardOpts}</select></div>
+    
     <div class="form-row">
       <div class="form-group"><label>Login Code</label><input id="m_aspLogin" placeholder="e.g. JD123" style="text-transform:uppercase;"></div>
       <div class="form-group"><label>Email (for login)</label><input id="m_aspEmail" type="email"></div>
@@ -3152,17 +3158,36 @@ function openAspirantModal() {
   `);
 }
 function aspPosChanged() { 
-  document.getElementById('m_aspWardWrap').style.display = document.getElementById('m_aspPosition').value === 'MCA' ? 'block' : 'none'; 
+  var pos = document.getElementById('m_aspPosition').value;
+  var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
+  var isConst = (pos === 'MP');
+  var isWard = (pos === 'MCA');
+  
+  document.getElementById('m_aspCountyWrap').style.display = isCounty ? 'block' : 'none';
+  document.getElementById('m_aspConstWrap').style.display = isConst ? 'block' : 'none';
+  document.getElementById('m_aspWardWrap').style.display = isWard ? 'block' : 'none';
 }
 
 async function saveAspirant(id) {
   var name = document.getElementById('m_aspName').value.trim();
   var pos = document.getElementById('m_aspPosition').value;
-  var ward = document.getElementById('m_aspWard') ? document.getElementById('m_aspWard').value : null;
   var login = document.getElementById('m_aspLogin').value.trim().toUpperCase();
+  
+  var county = document.getElementById('m_aspCounty') ? document.getElementById('m_aspCounty').value : null;
+  var constId = document.getElementById('m_aspConst') ? document.getElementById('m_aspConst').value : null;
+  var ward = document.getElementById('m_aspWard') ? document.getElementById('m_aspWard').value : null;
 
   if (!name || !login) return toast('Name and login code are required.', 'error');
-  if (pos === 'MCA' && !ward) return toast('MCA aspirants need a ward.', 'error');
+  
+  if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
+    return toast('Please select a County for this position.', 'error');
+  }
+  if (pos === 'MP' && !constId) {
+    return toast('Please select a Constituency for the MP.', 'error');
+  }
+  if (pos === 'MCA' && !ward) {
+    return toast('MCA aspirants need a ward.', 'error');
+  }
 
   if (id) {
     // --- EDITING EXISTING ASPIRANT ---
@@ -3170,34 +3195,37 @@ async function saveAspirant(id) {
       const { data, error } = await db.from('aspirants').update({ 
         name: name, 
         position: pos, 
-        ward_id: ward || null, 
+        county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+        constituency_id: (pos === 'MP') ? constId : null,
+        ward_id: (pos === 'MCA') ? ward : null,
         login_code: login 
-      }).eq('id', id).select(); // <--- .select() here too
+      }).eq('id', id).select();
 
-      if (error) {
-        console.error(error);
-        return toast('Database Error: ' + error.message, 'error');
-      }
-      if (!data || data.length === 0) {
-        return toast('Update failed. RLS policy might be blocking you.', 'error');
-      }
+      if (error) throw error;
+      if (!data || data.length === 0) return toast('Update failed. RLS might be blocking.', 'error');
 
       toast('Aspirant updated.', 'success'); 
       closeModal(); 
       loadAllData();
     } catch (err) {
-      console.error(err);
-      toast('An unexpected error occurred.', 'error');
+      toast('Error: ' + err.message, 'error');
     }
   } else {
-    // --- CREATING NEW ASPIRANT ---
+    // --- CREATING NEW ASPIRANT (Using the V2 RPC) ---
     var email = document.getElementById('m_aspEmail').value.trim();
     var pw = document.getElementById('m_aspPass').value;
     
-    if (!email || !pw) return toast('Email and password are required for new users.', 'error');
+    if (!email || !pw) return toast('Email and password are required.', 'error');
 
     const { data, error } = await db.rpc('admin_create_aspirant', { 
-      p_email: email, p_password: pw, p_name: name, p_position: pos, p_ward: ward || null, p_login: login 
+      p_email: email, 
+      p_password: pw, 
+      p_name: name, 
+      p_position: pos, 
+      p_county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+      p_constituency_id: (pos === 'MP') ? constId : null,
+      p_ward: (pos === 'MCA') ? ward : null,
+      p_login: login 
     });
     
     if (error || !data.success) return toast(error?.message || 'Failed to create aspirant.', 'error');
@@ -3211,15 +3239,22 @@ function editAspirant(id) {
   var a = ASPIRANTS.find(x => x.id === id); if (!a) return;
   
   var posOpts = POSITIONS.map(p => `<option value="${p}" ${p===a.position?'selected':''}>${p}</option>`).join('');
+  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}" ${c.id===a.county_id?'selected':''}>${esc(c.name)}</option>`).join('');
+  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(c => `<option value="${c.id}" ${c.id===a.constituency_id?'selected':''}>${esc(c.name)}</option>`).join('');
   var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===a.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
   
   openModal(modalHead('Edit Aspirant', a.id) + `
     <div class="form-group"><label>Full Name</label><input id="m_aspName" value="${escAttr(a.name)}"></div>
     <div class="form-group"><label>Position</label><select id="m_aspPosition" onchange="aspPosChanged()">${posOpts}</select></div>
-    <div class="form-group" id="m_aspWardWrap" style="display:${a.position === 'MCA' ? 'block' : 'none'};"><label>Ward</label><select id="m_aspWard">${wardOpts}</select></div>
+    
+    <div class="form-group" id="m_aspCountyWrap" style="display:none;"><label>County</label><select id="m_aspCounty">${countyOpts}</select></div>
+    <div class="form-group" id="m_aspConstWrap" style="display:none;"><label>Constituency</label><select id="m_aspConst">${constOpts}</select></div>
+    <div class="form-group" id="m_aspWardWrap" style="display:none;"><label>Ward</label><select id="m_aspWard">${wardOpts}</select></div>
+    
     <div class="form-group"><label>Login Code</label><input id="m_aspLogin" value="${escAttr(a.login_code)}" style="text-transform:uppercase;"></div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAspirant('${esc(id)}')">Save</button></div>
   `);
+  aspPosChanged();
 }
 
 // ================================================================
