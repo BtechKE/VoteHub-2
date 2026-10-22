@@ -2859,8 +2859,15 @@ async function saveWard(id) {
   var name = document.getElementById('m_wardName').value.trim();
   var constituency_id = document.getElementById('m_wardConst').value;
   if (!name) return toast('Enter a name.', 'error');
-  if (id) await db.from('wards').update({ name, constituency_id }).eq('id', id);
-  else await db.from('wards').insert({ name, constituency_id });
+  
+  if (id) {
+    await db.from('wards').update({ name, constituency_id }).eq('id', id);
+  } else {
+    // Generate a unique ID like W-K9L2M
+    var newId = 'W-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+    await db.from('wards').insert({ id: newId, name, constituency_id });
+  }
+  
   toast('Saved.', 'success'); closeModal(); loadAllData();
 }
 function deleteWard(id) {
@@ -4137,7 +4144,12 @@ function openCountyModal() {
 async function saveCounty() {
   var name = document.getElementById('m_countyName').value.trim();
   if (!name) return toast('Enter a county name.', 'error');
-  const { error } = await db.from('counties').insert({ name });
+  
+  // Generate a unique ID like CNT-X8F2A
+  var newId = 'CNT-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+  
+  const { error } = await db.from('counties').insert({ id: newId, name: name });
+  
   if (error) return toast('Failed: ' + error.message, 'error');
   toast('County added.', 'success'); closeModal(); loadAllData();
 }
@@ -4160,7 +4172,12 @@ async function saveConstituency() {
   var county_id = document.getElementById('m_constCounty').value;
   var name = document.getElementById('m_constName').value.trim();
   if (!name) return toast('Enter a constituency name.', 'error');
-  const { error } = await db.from('constituencies').insert({ county_id, name });
+  
+  // Generate a unique ID like CNS-B4G1X
+  var newId = 'CNS-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+  
+  const { error } = await db.from('constituencies').insert({ id: newId, county_id: county_id, name: name });
+  
   if (error) return toast('Failed: ' + error.message, 'error');
   toast('Constituency added.', 'success'); closeModal(); loadAllData();
 }
