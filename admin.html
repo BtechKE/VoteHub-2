@@ -2925,7 +2925,10 @@ function deleteStream(code) {
 // ================================================================
 function openCandidateModal() {
   var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  
   openModal(modalHead('Add Candidate') + 
     `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
@@ -2933,14 +2936,22 @@ function openCandidateModal() {
      <div class="form-group"><label>Code</label><input id="m_candCode"></div>
      <div class="form-group"><label>Photo URL <span class="hint">(GitHub or Drive)</span></label><input id="m_candPhoto" placeholder="https://github.com/..."></div>
      <div class="form-group"><label>Color <span class="hint">(e.g. #FFC72C)</span></label><input id="m_candColor" placeholder="#A5CF83"></div>
+     
+     <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
+     <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
      <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate()">Save</button></div>`);
 }
 
 function editCandidate(code) {
   var c = CANDIDATES.find(x => x.code === code); if (!c) return;
+  
   var posOpts = POSITIONS.map(p => `<option value="${p}" ${p===c.position?'selected':''}>${p}</option>`).join('');
+  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(co => `<option value="${co.id}" ${co.id===c.county_id?'selected':''}>${esc(co.name)}</option>`).join('');
+  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(co => `<option value="${co.id}" ${co.id===c.constituency_id?'selected':''}>${esc(co.name)}</option>`).join('');
   var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
+  
   openModal(modalHead('Edit Candidate', code) + 
     `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
@@ -2948,29 +2959,69 @@ function editCandidate(code) {
      <div class="form-group"><label>Code</label><input id="m_candCode" value="${escAttr(c.code)}"></div>
      <div class="form-group"><label>Photo URL</label><input id="m_candPhoto" value="${escAttr(c.photo_url||'')}"></div>
      <div class="form-group"><label>Color</label><input id="m_candColor" value="${escAttr(c.color||'')}"></div>
-     <div class="form-group" id="m_candWardWrap"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     
+     <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
+     <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
+     <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
   candPosChanged();
 }
-function candPosChanged() { document.getElementById('m_candWardWrap').style.display = document.getElementById('m_candPosition').value === 'MCA' ? 'block' : 'none'; }
-async function saveCandidate(oldCode) {
+function candPosChanged() { 
+  var pos = document.getElementById('m_candPosition').value;
+  var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
+  var isConst = (pos === 'MP');
+  var isWard = (pos === 'MCA');
+  
+  document.getElementById('m_candCountyWrap').style.display = isCounty ? 'block' : 'none';
+  document.getElementById('m_candConstWrap').style.display = isConst ? 'block' : 'none';
+  document.getElementById('m_candWardWrap').style.display = isWard ? 'block' : 'none';
+}
+
+  async function saveCandidate(oldCode) {
   var pos = document.getElementById('m_candPosition').value;
   var name = document.getElementById('m_candName').value.trim();
   var party = document.getElementById('m_candParty').value.trim();
   var code = document.getElementById('m_candCode').value.trim();
-  var ward = document.getElementById('m_candWard').value;
   var photo = document.getElementById('m_candPhoto').value.trim();
   var color = document.getElementById('m_candColor').value.trim();
 
-  if (!name || !party || !code) return toast('Fill all fields.', 'error');
-  if (pos === 'MCA' && !ward) return toast('MCA needs a ward.', 'error');
+  var county = document.getElementById('m_candCounty') ? document.getElementById('m_candCounty').value : null;
+  var constId = document.getElementById('m_candConst') ? document.getElementById('m_candConst').value : null;
+  var ward = document.getElementById('m_candWard') ? document.getElementById('m_candWard').value : null;
+
+  if (!name || !party || !code) return toast('Fill name, party, and code.', 'error');
+  
+  // Validate hierarchy based on position
+  if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
+    return toast('Please select a County for this position.', 'error');
+  }
+  if (pos === 'MP' && !constId) {
+    return toast('Please select a Constituency for the MP.', 'error');
+  }
+  if (pos === 'MCA' && !ward) {
+    return toast('Please select a Ward for the MCA.', 'error');
+  }
   
   // We save the raw URL, the UI will normalize it when reading
-  var payload = { position: pos, name, party, code, ward_id: ward || null, photo_url: photo, color: color };
+  var payload = { 
+    position: pos, 
+    name: name, 
+    party: party, 
+    code: code, 
+    county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+    constituency_id: (pos === 'MP') ? constId : null,
+    ward_id: (pos === 'MCA') ? ward : null,
+    photo_url: photo, 
+    color: color 
+  };
   
-  if (oldCode) await db.from('candidates').update(payload).eq('code', oldCode);
-  else await db.from('candidates').insert(payload);
+  var res;
+  if (oldCode) res = await db.from('candidates').update(payload).eq('code', oldCode);
+  else res = await db.from('candidates').insert(payload);
   
+  if (res.error) return toast('Database error: ' + res.error.message, 'error');
+
   toast('Saved.', 'success'); closeModal(); loadAllData();
 }
 function deleteCandidate(code) {
