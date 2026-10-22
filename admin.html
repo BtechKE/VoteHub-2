@@ -1,0 +1,4035 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — TallyHub</title>
+    <!-- ADD THIS LINE HERE -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    /* ================================================================
+   TALLYHUB UI KIT — Shared across Admin / Agent / Aspirant
+   Prefix: th- (TallyHub) to avoid collisions
+============================================================ */
+.th-modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 33, 26, 0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.th-modal-bg.active { display: flex; opacity: 1; }
+
+.th-modal {
+  background: var(--surface, #fff);
+  border-radius: 20px;
+  padding: 26px 24px 22px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 24px 72px rgba(27, 33, 26, 0.25);
+  transform: scale(0.94) translateY(8px);
+  transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+.th-modal-bg.active .th-modal { transform: scale(1) translateY(0); }
+
+.th-modal-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin: 0 auto 16px;
+}
+.th-modal-icon.warn   { background: var(--warning-soft, rgba(184,134,11,0.12)); color: var(--warning, #b8860b); }
+.th-modal-icon.danger { background: var(--danger-soft, rgba(196,69,58,0.08));   color: var(--danger, #c4453a); }
+.th-modal-icon.info   { background: var(--primary-soft, rgba(165,207,131,0.15)); color: var(--primary-dark, #8bb869); }
+
+.th-modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 6px;
+  color: var(--text, #1B211A);
+  letter-spacing: -0.2px;
+}
+.th-modal-msg {
+  font-size: 13.5px;
+  color: var(--text-muted, #6b7a6a);
+  text-align: center;
+  line-height: 1.55;
+}
+.th-modal-msg strong { color: var(--text, #1B211A); font-weight: 600; }
+
+.th-modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 22px;
+}
+.th-modal-actions.single { grid-template-columns: 1fr; }
+
+.th-btn {
+  padding: 12px 16px;
+  border: none;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background-color 0.15s, color 0.15s, transform 0.1s;
+}
+.th-btn:active { transform: scale(0.98); }
+.th-btn-ghost {
+  background: var(--bg, #FDFAF6);
+  color: var(--text, #1B211A);
+  border: 1.5px solid var(--border-strong, rgba(27,33,26,0.14));
+}
+.th-btn-ghost:hover { background: var(--primary-tint, rgba(165,207,131,0.07)); }
+.th-btn-primary {
+  background: var(--text, #1B211A);
+  color: var(--bg, #FDFAF6);
+}
+.th-btn-primary:hover { background: var(--primary-dark, #8bb869); color: var(--text, #1B211A); }
+.th-btn-danger { background: var(--danger, #c4453a); color: #fff; }
+.th-btn-danger:hover { background: #a93a30; }
+
+/* Generic button loading state (for Refresh, Toggle, etc.) */
+.btn.is-loading,
+.btn-toggle.is-loading {
+  opacity: 0.75;
+  cursor: wait !important;
+  pointer-events: none;
+}
+  :root {
+    --primary: #A5CF83;
+    --primary-dark: #8bb869;
+    --primary-soft: rgba(165, 207, 131, 0.14);
+    --primary-tint: rgba(165, 207, 131, 0.06);
+    --text: #1B211A;
+    --text-muted: #6b7a6a;
+    --text-faint: #9ca89b;
+    --bg: #FDFAF6;
+    --surface: #ffffff;
+    --border: rgba(27, 33, 26, 0.08);
+    --border-strong: rgba(27, 33, 26, 0.14);
+    --danger: #c4453a;
+    --danger-soft: rgba(196, 69, 58, 0.08);
+    --warning: #b8860b;
+    --warning-soft: rgba(184, 134, 11, 0.1);
+    --success: #4a7c3a;
+    --shadow-sm: 0 1px 3px rgba(27, 33, 26, 0.05);
+    --shadow-md: 0 8px 24px rgba(27, 33, 26, 0.08);
+    --shadow-lg: 0 24px 64px rgba(27, 33, 26, 0.14);
+    --radius: 14px;
+    --radius-lg: 20px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============================================================
+     TOP BAR
+  ============================================================ */
+  .topbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .topbar-mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--primary);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .topbar-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar-title small {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .user-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--primary-tint);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .user-chip i { color: var(--primary-dark); font-size: 12px; }
+  .logout-btn {
+    background: none;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .logout-btn:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+
+  /* ============================================================
+     LAYOUT
+  ============================================================ */
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* ============================================================
+     SYSTEM CONTROL BAR
+  ============================================================ */
+  .syscontrol {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .sys-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .sys-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .status-pill.open {
+    background: var(--primary-soft);
+    color: var(--success);
+  }
+  .status-pill::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .btn-toggle {
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--text);
+    color: var(--bg);
+    transition: background-color 0.18s, color 0.18s;
+  }
+  .btn-toggle:hover { background: var(--primary-dark); color: var(--text); }
+
+  .countdown {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 6px 14px;
+    background: var(--primary-tint);
+    border-radius: 10px;
+    color: var(--text);
+    min-width: 96px;
+    text-align: center;
+  }
+  .countdown.live {
+    background: var(--primary);
+    color: var(--text);
+  }
+  .countdown.ready {
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+
+  .syscontrol input[type="datetime-local"] {
+    padding: 8px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .syscontrol input[type="datetime-local"]:focus {
+    outline: none;
+    border-color: var(--primary-dark);
+    background: var(--surface);
+  }
+
+  /* ============================================================
+     STATS
+  ============================================================ */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 14px;
+    position: relative;
+    overflow: hidden;
+    contain: layout paint;
+  }
+  .stat::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--primary);
+  }
+  .stat-icon {
+    font-size: 15px;
+    color: var(--primary-dark);
+    margin-bottom: 8px;
+  }
+  .stat-num {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.5px;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-weight: 500;
+  }
+
+  /* ============================================================
+     TABS
+  ============================================================ */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 9px 16px;
+    border-radius: 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    font-size: 13.5px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .tab i { font-size: 12px; }
+  .tab:hover { background: var(--primary-tint); color: var(--text); }
+  .tab.active {
+    background: var(--text);
+    color: var(--bg);
+  }
+  .tab .badge {
+    font-size: 10.5px;
+    padding: 1px 7px;
+    border-radius: 20px;
+    background: var(--primary);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .tab:not(.active) .badge {
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+  }
+
+  /* ============================================================
+     SECTION (tab content)
+  ============================================================ */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .section-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title i { color: var(--primary-dark); font-size: 15px; }
+  .section-desc {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ============================================================
+     BUTTONS
+  ============================================================ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 16px;
+    border-radius: 10px;
+    border: none;
+    font-size: 13.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn i { font-size: 12px; }
+  .btn-primary {
+    background: var(--text);
+    color: var(--bg);
+  }
+  .btn-primary:hover { background: var(--primary-dark); color: var(--text); }
+  .btn-primary:disabled { opacity: 0.5; cursor: wait; }
+  .btn-ghost {
+    background: var(--primary-tint);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--primary-soft); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #a93a30; }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; }
+  .btn-icon {
+    width: 30px; height: 30px;
+    padding: 0;
+    border-radius: 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .btn-icon:hover {
+    background: var(--primary-tint);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .btn-icon.danger:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  /* ============================================================
+     ITEM LIST (chips)
+  ============================================================ */
+  .item-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px 7px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+  .item:hover { border-color: var(--border-strong); background: var(--surface); }
+  .item-code {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--primary-dark);
+    font-weight: 600;
+    background: var(--primary-tint);
+    padding: 2px 7px;
+    border-radius: 6px;
+  }
+  .item-name { font-weight: 500; }
+  .item-actions {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 4px;
+  }
+  .item-actions button {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .item-actions button:hover {
+    background: var(--primary-soft);
+    color: var(--text);
+  }
+  .item-actions button.danger:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  .empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .empty i {
+    font-size: 26px;
+    color: var(--text-faint);
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  /* ============================================================
+     MODAL
+  ============================================================ */
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(27, 33, 26, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .modal-bg.active { display: flex; }
+  .modal {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    width: 100%;
+    max-width: 480px;
+    box-shadow: var(--shadow-lg);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    margin: auto;
+  }
+  .modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .modal-sub {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .modal-close {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 15px;
+    flex-shrink: 0;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .modal-close:hover { background: var(--danger-soft); color: var(--danger); }
+
+  .form-group { margin-bottom: 14px; }
+  .form-group label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: var(--text);
+  }
+  .form-group .hint {
+    font-weight: 400;
+    color: var(--text-faint);
+    font-size: 11.5px;
+    margin-left: 4px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 13px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary-dark);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+  }
+  .form-group textarea { resize: vertical; min-height: 72px; }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ============================================================
+     TOAST
+  ============================================================ */
+  .toasts {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 5000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 360px;
+    width: calc(100% - 32px);
+    pointer-events: none;
+  }
+  .toast {
+    padding: 12px 16px;
+    background: var(--text);
+    color: var(--bg);
+    border-radius: 12px;
+    font-size: 13.5px;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+  }
+  .toast i { font-size: 15px; flex-shrink: 0; }
+  .toast.success i { color: var(--primary); }
+  .toast.error i { color: #ff8b7e; }
+  .toast.info i { color: var(--primary); }
+  .toast .close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: rgba(253, 250, 246, 0.5);
+    cursor: pointer;
+    font-size: 15px;
+    padding: 0 2px;
+  }
+
+  /* ============================================================
+     LOADING
+  ============================================================ */
+  .loading-inline {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .loading-inline i {
+    font-size: 22px;
+    color: var(--primary-dark);
+    animation: spin 0.9s linear infinite;
+    display: block;
+    margin-bottom: 10px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============================================================
+     MOBILE
+  ============================================================ */
+  @media (max-width: 640px) {
+    .page { padding: 14px; }
+    .topbar { padding: 10px 14px; }
+    .topbar-title small { display: none; }
+    .user-chip span { display: none; }
+    .logout-btn span { display: none; }
+    .logout-btn { padding: 8px 10px; }
+
+    .syscontrol {
+      padding: 12px 14px;
+      gap: 10px;
+    }
+    .sys-group { width: 100%; }
+
+    .stat-num { font-size: 22px; }
+    .stat { padding: 12px 12px; }
+
+    .section-card { padding: 16px; border-radius: 16px; }
+    .section-title { font-size: 15.5px; }
+    .section-head { margin-bottom: 14px; }
+
+    .tab { padding: 8px 13px; font-size: 13px; }
+
+    .item { font-size: 12.5px; padding: 6px 6px 6px 12px; }
+    .item-code { font-size: 10px; }
+
+    .modal { padding: 20px; border-radius: 16px; }
+    .modal-title { font-size: 16px; }
+    .form-row { grid-template-columns: 1fr; gap: 0; }
+
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; }
+
+    .toasts {
+      top: auto;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      width: auto;
+      max-width: none;
+    }
+  }
+
+    /* ============================================================
+     RESULTS TAB
+  ============================================================ */
+  .position-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+  .position-tab {
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: var(--primary-tint);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .position-tab:hover { background: var(--primary-soft); color: var(--text); }
+  .position-tab.active {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  .position-tab .pcount {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-left: 4px;
+  }
+
+  .result-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    margin-bottom: 8px;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .result-row:hover { border-color: var(--border-strong); background: var(--surface); }
+  .result-row.leader {
+    background: linear-gradient(to right, var(--primary-soft) 0%, transparent 60%);
+    border-color: var(--primary-dark);
+  }
+  .result-rank {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .result-row.leader .result-rank {
+    background: var(--primary);
+    border-color: var(--primary-dark);
+    color: var(--text);
+  }
+  .result-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .result-name {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .result-party {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .result-bar-track {
+    flex: 1.4;
+    height: 6px;
+    background: var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    min-width: 60px;
+  }
+  .result-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 20px;
+    transition: width 0.6s ease;
+  }
+  .result-votes {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    min-width: 60px;
+    text-align: right;
+  }
+  .result-pct {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    min-width: 44px;
+    text-align: right;
+  }
+
+  /* ============================================================
+     TRACKER TAB
+  ============================================================ */
+  .tracker-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .tracker-filters select {
+    padding: 8px 12px;
+    border: 1.5px solid var(--border-strong);
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--bg);
+    color: var(--text);
+    min-width: 140px;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .tracker-filters select:focus {
+    outline: none;
+    border-color: var(--primary-dark);
+    background: var(--surface);
+  }
+
+  .tracker-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 14px;
+    background: var(--primary-tint);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .tracker-stat { text-align: center; }
+  .tracker-stat .num {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+  .tracker-stat .lbl {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .tracker-stat.pct .num { color: var(--primary-dark); }
+
+  .tracker-group {
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .tracker-group-head {
+    padding: 10px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tracker-ward {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tracker-centre {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin-top: 1px;
+  }
+  .tracker-group-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .stream-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background-color 0.15s;
+    flex-wrap: wrap;
+  }
+  .stream-row:last-child { border-bottom: none; }
+  .stream-row:hover { background: var(--primary-tint); }
+  .stream-row.complete { background: rgba(165, 207, 131, 0.07); }
+  .stream-row.complete:hover { background: var(--primary-soft); }
+
+  .stream-id {
+    min-width: 120px;
+    flex-shrink: 0;
+  }
+  .stream-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .stream-code {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-top: 2px;
+  }
+
+  .stream-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .pill {
+    padding: 4px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-faint);
+    cursor: default;
+    font-family: inherit;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .pill.submitted {
+    background: var(--primary);
+    border-color: var(--primary-dark);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .pill.submitted:hover {
+    background: var(--primary-dark);
+    color: var(--bg);
+  }
+  .pill.pending {
+    background: var(--bg);
+    color: var(--text-faint);
+    opacity: 0.7;
+  }
+
+  .stream-progress {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    min-width: 46px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .stream-row.complete .stream-progress { color: var(--success); }
+
+    /* ============================================================
+     MCA WARD GRID
+  ============================================================ */
+  .mca-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .mca-card {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    cursor: pointer;
+    transition: transform 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mca-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary-dark);
+    box-shadow: 0 8px 24px rgba(27, 33, 26, 0.08);
+  }
+  .mca-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .mca-ward-name {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .mca-cand-count {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--primary-tint);
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .mca-leader { text-align: center; padding: 8px 0; }
+  .mca-crown { font-size: 22px; margin-bottom: 6px; }
+  .mca-leader-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.25;
+    margin-bottom: 3px;
+  }
+  .mca-leader-party {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .mca-leader-stats {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    background: var(--primary-soft);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .mca-leader-stats .votes { color: var(--text); }
+  .mca-leader-stats .sep { color: var(--text-faint); font-weight: 400; }
+  .mca-leader-stats .pct { color: var(--primary-dark); }
+  .mca-leader.empty-leader {
+    color: var(--text-faint);
+    padding: 14px 0;
+  }
+  .mca-leader.empty-leader i {
+    font-size: 22px;
+    display: block;
+    margin-bottom: 8px;
+    opacity: 0.5;
+  }
+  .mca-leader.empty-leader .mca-leader-name {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mca-leader.empty-leader .mca-leader-party {
+    font-size: 11.5px;
+  }
+  .mca-view-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background-color 0.15s, color 0.15s;
+    margin-top: auto;
+  }
+  .mca-view-btn:hover { background: var(--primary-dark); color: var(--text); }
+
+  .mca-drill-head {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .mca-drill-head .btn { align-self: flex-start; }
+  .mca-drill-title { padding-left: 2px; }
+  .mca-drill-ward {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .mca-drill-sub {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  @media (max-width: 640px) {
+    .mca-grid { grid-template-columns: 1fr; gap: 10px; }
+    .mca-card { padding: 14px; }
+    .mca-ward-name { font-size: 14px; }
+    .mca-leader-name { font-size: 14.5px; }
+  }
+
+  @media (max-width: 640px) {
+    .result-bar-track { display: none; }
+    .result-votes { min-width: 50px; font-size: 14px; }
+    .stream-id { min-width: 100%; }
+    .stream-pills { min-width: 100%; }
+    .stream-progress { min-width: auto; margin-left: auto; }
+    .tracker-filters select { min-width: 0; flex: 1; }
+  }
+
+  /* ================================================================
+   COLOUR LAYER — additive polish
+============================================================ */
+:root {
+  --green:       #A5CF83;
+  --green-dark:  #7EAE5C;
+  --green-soft:  rgba(165, 207, 131, 0.15);
+  --blue:        #1591DC;
+  --blue-soft:   rgba(21, 145, 220, 0.12);
+  --blue-glow:   rgba(21, 145, 220, 0.28);
+  --slate:       #435663;
+}
+
+/* Soft coloured halos behind the page */
+body::before {
+  content: '';
+  position: fixed;
+  top: -280px; right: -280px;
+  width: 620px; height: 620px;
+  background: radial-gradient(circle, rgba(165, 207, 131, 0.18) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -320px; left: -280px;
+  width: 620px; height: 620px;
+  background: radial-gradient(circle, rgba(21, 145, 220, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.page, .topbar { position: relative; z-index: 1; }
+
+/* Topbar with a thin coloured accent */
+.topbar {
+  background: linear-gradient(to bottom, #FFFFFF 0%, #FDFAF6 100%);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.topbar::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--green) 0%, var(--blue) 100%);
+  opacity: 0.6;
+}
+
+/* Topbar mark - subtle gradient */
+.topbar-mark {
+  background: linear-gradient(135deg, var(--green) 0%, #8FBF6C 100%);
+  box-shadow: 0 4px 12px rgba(165, 207, 131, 0.35);
+}
+
+/* User chip - blue tint */
+.user-chip {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.user-chip i { color: var(--blue); }
+
+/* Stat cards - colour-tinted accents */
+.stat {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: 0 10px 28px -12px rgba(26, 26, 25, 0.10);
+}
+.stat::before {
+  background: linear-gradient(90deg, var(--green) 0%, var(--green-dark) 100%);
+}
+
+/* Live stat — blue accent with pulsing dot */
+.stat-live::before {
+  background: linear-gradient(90deg, var(--blue) 0%, #0F7BC0 100%);
+}
+.stat-live .stat-icon { color: var(--blue); }
+.stat-live:hover {
+  border-color: var(--blue);
+  box-shadow: 0 10px 28px -10px var(--blue-glow);
+}
+
+.live-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  margin-left: 6px;
+  vertical-align: middle;
+  position: relative;
+}
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: var(--blue);
+  opacity: 0.5;
+  animation: livePulse 1.8s ease-out infinite;
+}
+@keyframes livePulse {
+  0%   { transform: scale(1);   opacity: 0.5; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Section cards - subtle top tint */
+.section-card {
+  background-image: linear-gradient(to bottom, rgba(165, 207, 131, 0.04) 0%, transparent 60px);
+}
+
+/* Tabs - colour the active tab with a gradient */
+.tab.active {
+  background: linear-gradient(135deg, var(--ink) 0%, #2A2A28 100%);
+  color: #F0F0F0;
+}
+.tab:not(.active):hover {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.tab:not(.active) .badge {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.tab.active .badge {
+  background: var(--green);
+  color: var(--ink);
+}
+
+/* Primary buttons — keep ink, but add blue on hover option */
+.btn-primary:hover {
+  background: var(--blue);
+  color: #fff;
+}
+
+/* Ghost buttons — subtle blue tint on hover */
+.btn-ghost:hover {
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-color: rgba(21, 145, 220, 0.25);
+}
+
+/* Item chips — hover with green tint */
+.item:hover {
+  border-color: var(--green-dark);
+  background: var(--green-soft);
+}
+.item-code {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+/* Empty state icons — softer, coloured */
+.empty i { color: var(--green-dark); opacity: 0.55; }
+
+/* Toast icons — already coloured, ensure fresh look */
+.toast.success i { color: var(--green); }
+.toast.info i    { color: var(--blue); }
+
+/* ================================================================
+   ACTIVE USERS MODAL
+============================================================ */
+.user-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 14px;
+  background: var(--canvas, #F0F0F0);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.user-summary-item {
+  text-align: center;
+}
+.user-summary-item .num {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.4px;
+  line-height: 1;
+}
+.user-summary-item .lbl {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--slate, #435663);
+  margin-top: 5px;
+}
+.user-summary-item.blue .num  { color: var(--blue); }
+.user-summary-item.green .num { color: var(--green-dark); }
+
+.user-list {
+  max-height: 380px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s;
+}
+.user-row:last-child { border-bottom: none; }
+.user-row:hover { background: rgba(165, 207, 131, 0.05); }
+
+.user-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+
+.user-info { flex: 1; min-width: 0; }
+.user-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.user-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--slate, #435663);
+  flex-wrap: wrap;
+}
+.user-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.user-role i { font-size: 10px; }
+.user-dot-sep { color: var(--border-2, rgba(0,0,0,0.2)); }
+
+.user-times {
+  text-align: right;
+  flex-shrink: 0;
+}
+.user-active {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.user-remain {
+  font-size: 11px;
+  color: var(--slate, #435663);
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .user-summary { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .user-times { text-align: left; }
+  .user-row { flex-wrap: wrap; }
+}
+/* ================================================================
+   BOTTOM SHEET — tracker submission detail
+============================================================ */
+.sheet-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 25, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: none;
+  z-index: 9000;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  padding: 20px;
+  overflow-y: auto;
+}
+.sheet-bg.active {
+  display: flex;
+  opacity: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet {
+  background: var(--surface);
+  border-radius: 22px;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  padding: 22px 24px 26px;
+  margin: auto;
+  transform: scale(0.94) translateY(12px);
+  transition: transform 0.28s cubic-bezier(0.34, 1.35, 0.64, 1);
+  position: relative;
+  box-shadow: 0 24px 64px rgba(26, 26, 25, 0.35);
+}
+.sheet-bg.active .sheet { transform: scale(1) translateY(0); }
+
+@media (max-width: 640px) {
+  .sheet-bg { padding: 14px; }
+  .sheet {
+    max-width: 100%;
+    border-radius: 20px;
+    padding: 20px 18px 24px;
+    max-height: calc(100dvh - 28px);
+  }
+}
+
+.sheet-grabber {
+  width: 40px; height: 4px;
+  background: rgba(27, 33, 26, 0.14);
+  border-radius: 20px;
+  margin: 6px auto 14px;
+}
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sheet-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+  color: var(--text);
+}
+.sheet-sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-weight: 500;
+}
+.sheet-close {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: background-color 0.15s, color 0.15s;
+}
+.sheet-close:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* Info strip inside the sheet */
+.pip-result-info {
+  padding: 12px 14px;
+  background: var(--primary-tint);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.pip-result-info .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pip-result-info .row:last-child { margin-bottom: 0; }
+.pip-result-info .row i { width: 14px; text-align: center; }
+.pip-result-info .row i.user  { color: var(--primary-dark); }
+.pip-result-info .row i.clock { color: var(--secondary, #1591DC); }
+.pip-result-info .row i.lock  { color: var(--text-faint); }
+.pip-result-info strong { color: var(--text); font-weight: 600; }
+
+/* Square pips (parity with aspirant tracker) */
+.track-pips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.track-pip {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+  font-family: inherit;
+  border: none;
+  padding: 0;
+  background: rgba(27, 33, 26, 0.06);
+  color: var(--text-faint);
+}
+.track-pip.done {
+  background: var(--primary);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.15s, transform 0.12s;
+}
+.track-pip.done:hover {
+  background: var(--primary-dark);
+  transform: scale(1.08);
+}
+.track-pip.done:active { transform: scale(0.95); }
+.track-pip.pending { cursor: not-allowed; opacity: 0.55; }
+
+@media (max-width: 640px) {
+  .sheet { padding: 8px 16px 22px; }
+  .track-pip { width: 30px; height: 30px; font-size: 12px; }
+}
+
+/* ================================================================
+   ADMIN — SOFT GREEN CANVAS
+============================================================ */
+
+body {
+  background: #ECFAE5;
+  background-image:
+    radial-gradient(circle at 100% 0%, rgba(165, 207, 131, 0.20) 0%, transparent 55%),
+    radial-gradient(circle at 0% 100%, rgba(165, 207, 131, 0.14) 0%, transparent 55%);
+  background-attachment: fixed;
+}
+
+/* The existing body::before / ::after halos were tuned for the old
+   cream canvas — reduce their intensity slightly so they don't
+   double-up with the green background. */
+body::before {
+  background: radial-gradient(circle, rgba(165, 207, 131, 0.14) 0%, transparent 70%);
+}
+body::after {
+  background: radial-gradient(circle, rgba(21, 145, 220, 0.08) 0%, transparent 70%);
+}
+/* ================================================================
+   ADMIN — SOLID BLACK ACTIVE TAB (fix)
+============================================================ */
+
+:root {
+  --ink: #1B211A;   /* was missing — the aspirant page had it, admin didn't */
+}
+
+.tab.active {
+  background: #1B211A !important;
+  color: #FFFFFF !important;
+  border-color: #1B211A !important;
+  box-shadow: 0 4px 14px rgba(27, 33, 26, 0.25);
+}
+
+.tab.active i {
+  color: #FFFFFF !important;
+}
+
+.tab.active .badge {
+  background: #A5CF83 !important;
+  color: #1B211A !important;
+}
+
+/* Hover on inactive tabs — light green tint (matches aspirant) */
+.tab:not(.active):hover {
+  background: rgba(165, 207, 131, 0.30);
+  color: #4A7C3A;
+}
+
+/* Position tabs in Results tab — same treatment */
+.position-tab.active {
+  background: #1B211A !important;
+  color: #FFFFFF !important;
+  border-color: #1B211A !important;
+}
+
+/* ================================================================
+   CANDIDATE AVATARS — shared across all portals
+============================================================ */
+.avatar-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(165, 207, 131, 0.35) 0%, rgba(126, 174, 92, 0.25) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: #4A7C3A;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 2px 8px rgba(26, 26, 25, 0.08);
+}
+.avatar-wrap img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.avatar-wrap.no-photo {
+  background: linear-gradient(135deg, rgba(165, 207, 131, 0.35) 0%, rgba(126, 174, 92, 0.25) 100%);
+  color: #4A7C3A;
+}
+
+.avatar-rank {
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 20px;
+  background: #1A1A19;
+  color: #F0F0F0;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+.result-row.leader .avatar-rank,
+.board-row.leader .avatar-rank,
+.readonly-row.leader .avatar-rank,
+.card.leading .avatar-rank {
+  background: #7EAE5C;
+  color: #FFFFFF;
+}
+
+/* Small variant for agent entry form */
+.avatar-wrap.small {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+.avatar-wrap.small .avatar-rank {
+  min-width: 16px;
+  height: 16px;
+  font-size: 9px;
+  padding: 0 4px;
+}
+
+/* Agent entry rows */
+.candidate-entry .entry-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(165, 207, 131, 0.35) 0%, rgba(126, 174, 92, 0.25) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: #4A7C3A;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+}
+.candidate-entry .entry-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Hero avatar (aspirant only) */
+.hero-name-row { display: flex; align-items: center; gap: 14px; }
+.hero-avatar {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(165, 207, 131, 0.20);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.30);
+}
+.hero-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+@media (max-width: 640px) {
+  .avatar-wrap { width: 38px; height: 38px; font-size: 14px; }
+  .avatar-wrap .avatar-rank { min-width: 16px; height: 16px; font-size: 9px; }
+  .candidate-entry .entry-avatar { width: 34px; height: 34px; font-size: 13px; }
+  .hero-avatar { width: 46px; height: 46px; }
+}
+
+/* Faster sheet opening — less perceived "drag" */
+.sheet-bg {
+  transition: opacity 0.12s ease !important;
+}
+.sheet {
+  transition: transform 0.18s cubic-bezier(0.32, 1.2, 0.5, 1) !important;
+}
+
+/* Lock image rendering to a fixed circle so layout doesn't jump while loading */
+.avatar-wrap img,
+.result-row .avatar-wrap img {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Use the browser's native image decoding to avoid jank */
+.avatar-wrap img { image-rendering: auto; }
+
+/* ================================================================
+   EXPORT PDF
+============================================================ */
+.results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.results-head .position-tabs {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.export-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.export-opt {
+  position: relative;
+  padding: 14px 12px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+.export-opt i:first-child {
+  font-size: 14px;
+  color: var(--primary-dark);
+  width: 16px;
+  text-align: center;
+}
+.export-opt:hover {
+  background: var(--surface);
+  border-color: var(--primary-dark);
+}
+.export-opt.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.export-opt.active i:first-child { color: var(--primary); }
+.export-opt .export-check {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 11px;
+  color: var(--primary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.export-opt.active .export-check { opacity: 1; }
+
+@media (max-width: 640px) {
+  .export-options { grid-template-columns: 1fr; }
+  .results-head { flex-direction: column; align-items: stretch; }
+  .results-head .btn { width: 100%; justify-content: center; }
+}
+        /* ================================================================
+       CENTER ALIGN STAT CARDS
+    ================================================================ */
+    .stat {
+      text-align: center;
+    }
+    .stat-icon {
+      display: block;
+      margin: 0 auto 8px auto;
+    }
+    .stat-label {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     TOP BAR
+============================================================ -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-mark"><i class="fas fa-sliders-h"></i></div>
+    <div class="topbar-title">
+      TallyHub Admin
+      <small id="constituencyLabel">Configure your election</small>
+    </div>
+  </div>
+  <div class="topbar-user">
+    <div class="user-chip">
+      <i class="fas fa-user-shield"></i>
+      <span>Administrator</span>
+    </div>
+    <button class="logout-btn" onclick="doLogout()">
+      <i class="fas fa-sign-out-alt"></i>
+      <span>Logout</span>
+    </button>
+  </div>
+</div>
+
+<!-- ============================================================
+     PAGE
+============================================================ -->
+<div class="page">
+
+  <!-- SYSTEM CONTROL -->
+  <div class="syscontrol">
+    <div class="sys-group">
+      <span class="sys-label">Submission</span>
+      <span class="status-pill" id="submissionPill">Checking…</span>
+      <button class="btn-toggle" id="toggleSubmissionBtn" onclick="toggleSubmission()">
+        <i class="fas fa-lock"></i> Toggle
+      </button>
+    </div>
+
+    <div class="sys-group">
+      <span class="sys-label">Counting</span>
+      <input type="datetime-local" id="startTimeInput">
+      <button class="btn btn-ghost btn-sm" onclick="setStartTime()">
+        <i class="fas fa-save"></i> Save
+      </button>
+      <span class="countdown" id="countdown">--:--:--</span>
+    </div>
+    <!-- LOGIN GATE -->
+    <div class="sys-group">
+      <span class="sys-label">Login Gate</span>
+      <span class="status-pill" id="gatePill">Checking…</span>
+      <input type="datetime-local" id="gateOpensAtInput">
+      <button class="btn btn-ghost btn-sm" onclick="saveGateOpensAt()">
+        <i class="fas fa-save"></i> Set time
+      </button>
+      <button class="btn-toggle" id="gateToggleBtn" onclick="toggleLoginGate()">
+        <i class="fas fa-lock"></i> Toggle
+      </button>
+    </div>
+    <div class="sys-group">
+      <button class="btn btn-ghost btn-sm" onclick="refreshAll(this)">
+  <i class="fas fa-sync-alt"></i> Refresh
+</button>
+    </div>
+  </div>
+
+  <!-- STATS -->
+   <!-- STATS -->
+  <div class="stats">
+    <div class="stat stat-live" onclick="openActiveUsers()" style="cursor:pointer;">
+      <div class="stat-icon"><i class="fas fa-signal"></i></div>
+      <div class="stat-num" id="statOnline">—</div>
+      <div class="stat-label">
+        Online Now
+        <span class="live-dot"></span>
+      </div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-map-signs"></i></div>
+      <div class="stat-num" id="statWards">—</div>
+      <div class="stat-label">Wards</div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-school"></i></div>
+      <div class="stat-num" id="statCentres">—</div>
+      <div class="stat-label">Centres</div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-list-ol"></i></div>
+      <div class="stat-num" id="statStreams">—</div>
+      <div class="stat-label">Streams</div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-user-tie"></i></div>
+      <div class="stat-num" id="statCandidates">—</div>
+      <div class="stat-label">Candidates</div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-users-cog"></i></div>
+      <div class="stat-num" id="statAgents">—</div>
+      <div class="stat-label">Agents</div>
+    </div>
+    <div class="stat">
+      <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+      <div class="stat-num" id="statAspirants">—</div>
+      <div class="stat-label">Aspirants</div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="results" onclick="switchTab('results')">
+      <i class="fas fa-chart-bar"></i> Results
+    </button>
+    <button class="tab" data-tab="tracker" onclick="switchTab('tracker')">
+      <i class="fas fa-satellite-dish"></i> Live Tracker <span class="badge" id="badgeTracker">0</span>
+    </button>
+    <button class="tab" data-tab="wards" onclick="switchTab('wards')">
+      <i class="fas fa-map-signs"></i> Wards <span class="badge" id="badgeWards">0</span>
+    </button>
+    <button class="tab" data-tab="centres" onclick="switchTab('centres')">
+      <i class="fas fa-school"></i> Centres <span class="badge" id="badgeCentres">0</span>
+    </button>
+    <button class="tab" data-tab="streams" onclick="switchTab('streams')">
+      <i class="fas fa-list-ol"></i> Streams <span class="badge" id="badgeStreams">0</span>
+    </button>
+    <button class="tab" data-tab="candidates" onclick="switchTab('candidates')">
+      <i class="fas fa-user-tie"></i> Candidates <span class="badge" id="badgeCandidates">0</span>
+    </button>
+    <button class="tab" data-tab="agents" onclick="switchTab('agents')">
+      <i class="fas fa-users-cog"></i> Agents <span class="badge" id="badgeAgents">0</span>
+    </button>
+    <button class="tab" data-tab="aspirants" onclick="switchTab('aspirants')">
+      <i class="fas fa-chart-line"></i> Aspirants <span class="badge" id="badgeAspirants">0</span>
+    </button>
+    <button class="tab" data-tab="settings" onclick="switchTab('settings')">
+      <i class="fas fa-cog"></i> Settings
+    </button>
+  </div>
+
+  <!-- ============================================================
+       RESULTS
+  ============================================================ -->
+  <div class="section active" id="sec-results">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-chart-bar"></i> Live Results</div>
+          <div class="section-desc" id="resultsSub">Real-time tallies across all streams</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshResults(this)">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+      </div>
+
+           <div class="results-head">
+        <div class="position-tabs" id="resultsPosTabs"></div>
+        <button class="btn btn-ghost btn-sm" onclick="openExportModal()">
+          <i class="fas fa-file-pdf"></i> Export PDF
+        </button>
+      </div>
+      <div id="resultsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       LIVE TRACKER
+  ============================================================ -->
+  <div class="section" id="sec-tracker">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-satellite-dish"></i> Submission Tracker</div>
+          <div class="section-desc" id="trackerSub">Which streams have reported — and which haven't</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="refreshTracker(this)">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+      </div>
+
+      <div class="tracker-filters" id="trackerFilters">
+        <select id="trackerWard" onchange="trackerCentreOptions(); renderTracker();">
+          <option value="">All Wards</option>
+        </select>
+        <select id="trackerCentre" onchange="renderTracker()">
+          <option value="">All Centres</option>
+        </select>
+        <select id="trackerStatus" onchange="renderTracker()">
+          <option value="">All Statuses</option>
+          <option value="complete">✅ Complete (all 6)</option>
+          <option value="partial">⏳ Partial (1–5)</option>
+          <option value="pending">⭕ Not started (0)</option>
+        </select>
+      </div>
+
+      <div id="trackerSummary" class="tracker-summary"></div>
+      <div id="trackerList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       WARDS
+  ============================================================ -->
+  <div class="section" id="sec-wards">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-map-signs"></i> Wards</div>
+          <div class="section-desc">Administrative subdivisions of your constituency</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openWardModal()">
+          <i class="fas fa-plus"></i> Add Ward
+        </button>
+      </div>
+      <div id="wardsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CENTRES
+  ============================================================ -->
+  <div class="section" id="sec-centres">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-school"></i> Polling Centres</div>
+          <div class="section-desc">Each centre belongs to a ward and contains streams</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openCentreModal()">
+          <i class="fas fa-plus"></i> Add Centre
+        </button>
+      </div>
+      <div id="centresList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       STREAMS
+  ============================================================ -->
+  <div class="section" id="sec-streams">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-list-ol"></i> Streams</div>
+          <div class="section-desc">Polling streams per centre — generated in bulk</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openStreamModal()">
+          <i class="fas fa-plus"></i> Generate
+        </button>
+      </div>
+      <div id="streamsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CANDIDATES
+  ============================================================ -->
+  <div class="section" id="sec-candidates">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-user-tie"></i> Candidates</div>
+          <div class="section-desc">All candidates across every position</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openCandidateModal()">
+          <i class="fas fa-plus"></i> Add Candidate
+        </button>
+      </div>
+      <div id="candidatesList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       AGENTS
+  ============================================================ -->
+  <div class="section" id="sec-agents">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-users-cog"></i> Presiding Agents</div>
+          <div class="section-desc">Assign streams and set login credentials</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openAgentModal()">
+          <i class="fas fa-plus"></i> Add Agent
+        </button>
+      </div>
+      <div id="agentsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ASPIRANTS
+  ============================================================ -->
+  <div class="section" id="sec-aspirants">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-chart-line"></i> Aspirants</div>
+          <div class="section-desc">Clients with live dashboard access</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openAspirantModal()">
+          <i class="fas fa-plus"></i> Add Aspirant
+        </button>
+      </div>
+      <div id="aspirantsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SETTINGS
+  ============================================================ -->
+  <div class="section" id="sec-settings">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-cog"></i> Election Settings</div>
+          <div class="section-desc">Basic election metadata</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Constituency</label>
+          <input id="cfgConstituency" placeholder="e.g. Westlands">
+        </div>
+        <div class="form-group">
+          <label>County</label>
+          <input id="cfgCounty" placeholder="e.g. Nairobi">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Election Date</label>
+        <input id="cfgElectionDate" type="date">
+      </div>
+      <button class="btn btn-primary" onclick="saveElectionSettings()">
+        <i class="fas fa-save"></i> Save Settings
+      </button>
+    </div>
+
+    <div class="section-card" style="margin-top:16px;">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-key"></i> Admin Credentials</div>
+          <div class="section-desc">Change the login ID and password used to access this dashboard</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Admin ID</label>
+        <input id="cfgAdminID" placeholder="admin">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>New Password <span class="hint">(leave empty to keep current)</span></label>
+          <input id="cfgAdminPass" type="password" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input id="cfgAdminPass2" type="password" autocomplete="new-password">
+        </div>
+      </div>
+          <button class="btn btn-primary" onclick="saveAdminCredentials()">
+        <i class="fas fa-shield-alt"></i> Update Credentials
+      </button>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<!-- ============================================================
+     EXPORT MODAL
+============================================================ -->
+<div class="modal-bg" id="exportModal" onclick="if(event.target===this) closeExportModal()">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Generate PDF Report</div>
+        <div class="modal-sub">Pick a position to export the full report</div>
+      </div>
+      <button class="modal-close" onclick="closeExportModal()"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="export-options" id="exportOptions">
+      <button class="export-opt" data-pos="President" onclick="selectExportPos('President')">
+        <i class="fas fa-flag"></i> <span>President</span> <i class="fas fa-check export-check"></i>
+      </button>
+      <button class="export-opt" data-pos="Governor" onclick="selectExportPos('Governor')">
+        <i class="fas fa-landmark"></i> <span>Governor</span> <i class="fas fa-check export-check"></i>
+      </button>
+      <button class="export-opt" data-pos="Senator" onclick="selectExportPos('Senator')">
+        <i class="fas fa-building-columns"></i> <span>Senator</span> <i class="fas fa-check export-check"></i>
+      </button>
+      <button class="export-opt" data-pos="MP" onclick="selectExportPos('MP')">
+        <i class="fas fa-user-tie"></i> <span>MP</span> <i class="fas fa-check export-check"></i>
+      </button>
+      <button class="export-opt" data-pos="Women Rep" onclick="selectExportPos('Women Rep')">
+        <i class="fas fa-venus"></i> <span>Women Rep</span> <i class="fas fa-check export-check"></i>
+      </button>
+      <button class="export-opt" data-pos="MCA" onclick="selectExportPos('MCA')">
+        <i class="fas fa-map-location-dot"></i> <span>MCA</span> <i class="fas fa-check export-check"></i>
+      </button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeExportModal()">Cancel</button>
+      <button class="btn btn-primary" id="exportGoBtn" onclick="generatePDF()" disabled>
+        <i class="fas fa-file-pdf"></i> Generate PDF
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL (CRUD)
+============================================================ -->
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- ============================================================
+     BOTTOM SHEET — tracker submission detail
+============================================================ -->
+<div class="sheet-bg" id="sheetBg" onclick="if(event.target===this) closeSheet()">
+  <div class="sheet" id="sheet">
+    <div class="sheet-grabber"></div>
+    <div id="sheetContent"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     TOASTS
+============================================================ -->
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ================================================================
+//  SUPABASE INITIALIZATION
+// ================================================================
+const supabaseUrl = 'https://hhlrytakwifmgzktebzh.supabase.co';
+const supabaseKey = 'sb_publishable_eaKzqM_sDHvW9UOCvLkOqQ_QcL9nS2M';
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+// ================================================================
+//  STATE
+// ================================================================
+var WARDS = [], CENTRES = [], STREAMS = [], CANDIDATES = [], AGENTS = [], ASPIRANTS = [];
+var CONFIG = {};
+var countdownTimer = null;
+var POSITIONS = ['President', 'Governor', 'Senator', 'MP', 'Women Rep', 'MCA'];
+var POSITION_ICONS = { 'President': 'fa-flag', 'Governor': 'fa-landmark', 'Senator': 'fa-university', 'MP': 'fa-user-tie', 'Women Rep': 'fa-female', 'MCA': 'fa-map-pin' };
+
+// ================================================================
+//  UI KIT (Same as before)
+// ================================================================
+function thConfirm(opts) {
+  return new Promise(function (resolve) {
+    opts = opts || {};
+    var tone = opts.tone || 'warn';
+    var single = !!opts.alertOnly;
+    var iconMap = { warn: 'fa-exclamation-triangle', danger: 'fa-sign-out-alt', info: 'fa-info-circle' };
+    var icon = opts.icon || iconMap[tone] || 'fa-question-circle';
+    var confirmCls = tone === 'danger' ? 'th-btn-danger' : 'th-btn-primary';
+
+    var actions = single
+      ? '<button class="th-btn th-btn-primary" data-act="ok">' + esc(opts.confirmText || 'OK') + '</button>'
+      : '<button class="th-btn th-btn-ghost" data-act="cancel">' + esc(opts.cancelText || 'Cancel') + '</button>' +
+        '<button class="th-btn ' + confirmCls + '" data-act="ok">' + esc(opts.confirmText || 'Confirm') + '</button>';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'th-modal-bg';
+    wrap.innerHTML = '<div class="th-modal"><div class="th-modal-icon ' + tone + '"><i class="fas ' + icon + '"></i></div><div class="th-modal-title">' + esc(opts.title || 'Confirm') + '</div>' + (opts.message ? '<div class="th-modal-msg">' + opts.message + '</div>' : '') + '<div class="th-modal-actions' + (single ? ' single' : '') + '">' + actions + '</div></div>';
+
+    document.body.appendChild(wrap);
+    requestAnimationFrame(function () { wrap.classList.add('active'); });
+
+    var resolved = false;
+    function close(val) {
+      if (resolved) return;
+      resolved = true;
+      wrap.classList.remove('active');
+      setTimeout(function () { if (wrap.parentElement) wrap.remove(); }, 220);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onKey(e) { if (e.key === 'Escape') close(false); else if (e.key === 'Enter') close(true); }
+    wrap.addEventListener('click', function (e) {
+      if (e.target === wrap) return close(false);
+      var act = e.target.closest('[data-act]');
+      if (!act) return;
+      close(act.dataset.act === 'ok');
+    });
+    document.addEventListener('keydown', onKey);
+    setTimeout(function () { var ok = wrap.querySelector('[data-act="ok"]'); if (ok) ok.focus(); }, 60);
+  });
+}
+
+function thBtnLoad(btn, label) {
+  if (!btn) return;
+  if (!btn._thOriginal) btn._thOriginal = btn.innerHTML;
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (label ? '<span>' + label + '</span>' : '');
+}
+function thBtnDone(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.classList.remove('is-loading');
+  if (btn._thOriginal) { btn.innerHTML = btn._thOriginal; btn._thOriginal = null; }
+}
+
+function toast(msg, type) {
+  type = type || 'info';
+  var icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+  var el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i><span></span><button class="close" onclick="this.parentElement.remove()">&times;</button>';
+  el.querySelector('span').textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(function () { if (el.parentElement) el.remove(); }, 4500);
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function escAttr(s) { return esc(s); }
+
+// ================================================================
+//  INIT
+// ================================================================
+(async function init() {
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) { window.location.href = 'index.html'; return; }
+  
+  // Verify admin role or hardcoded admin email
+  if (user.email !== 'admin@tallyhub.com') {
+    toast('Unauthorized access.', 'error');
+    setTimeout(() => { db.auth.signOut().then(() => window.location.href = 'index.html'); }, 2000);
+    return;
+  }
+
+  refreshAll();
+})();
+
+function refreshAll(btn) {
+  if (btn) thBtnLoad(btn, 'Refreshing…');
+  loadSystemStatus();
+  loadGateStatus();
+  loadAllData();
+  loadActiveUsers();
+  setTimeout(function () { if (btn) thBtnDone(btn); }, 1200);
+}
+
+function doLogout() {
+  thConfirm({
+    title: 'Sign out of Admin?',
+    message: 'You will need to log in again to access the dashboard.',
+    confirmText: 'Sign Out', cancelText: 'Stay', tone: 'danger', icon: 'fa-sign-out-alt'
+  }).then(function (ok) {
+    if (ok) db.auth.signOut().then(() => window.location.href = 'index.html');
+  });
+}
+
+// ================================================================
+//  TABS
+// ================================================================
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === name); });
+  document.querySelectorAll('.section').forEach(function (s) { s.classList.toggle('active', s.id === 'sec-' + name); });
+
+  if (name === 'results') { MCA_SUMMARY = null; loadAdminResults(); }
+  if (name === 'tracker') { loadSubmissionMatrix(); }
+}
+
+// ================================================================
+//  SYSTEM STATUS & CONFIG
+// ================================================================
+async function loadSystemStatus() {
+  // Fetch data and catch any errors
+  const { data, error } = await db.from('config').select('*');
+  
+  if (error) {
+    console.error("Load error:", error);
+    return toast('Failed to load configuration.', 'error');
+  }
+  
+  if (!data) return;
+  
+  // Convert array of rows into a single object { Constituency: "Westlands", ... }
+  CONFIG = {};
+  data.forEach(r => CONFIG[r.key] = r.value);
+
+  // 1. Update Submission Pill
+  var pill = document.getElementById('submissionPill');
+  if (CONFIG.SubmissionOpen === 'TRUE') { 
+    pill.className = 'status-pill open'; 
+    pill.textContent = 'Open'; 
+  } else { 
+    pill.className = 'status-pill'; 
+    pill.textContent = 'Closed'; 
+  }
+
+  // 2. Update Countdown
+  if (CONFIG.CountingStartTime) {
+    try {
+      var dt = new Date(CONFIG.CountingStartTime);
+      document.getElementById('startTimeInput').value = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    } catch (e) {}
+  }
+  startCountdown(CONFIG.CountingStartTime);
+
+  // 3. Fill in the Settings Form inputs
+  document.getElementById('constituencyLabel').textContent = CONFIG.Constituency ? CONFIG.Constituency + ' · ' + CONFIG.County : 'Configure your election';
+  document.getElementById('cfgConstituency').value = CONFIG.Constituency || '';
+  document.getElementById('cfgCounty').value = CONFIG.County || '';
+  document.getElementById('cfgElectionDate').value = CONFIG.ElectionDate ? String(CONFIG.ElectionDate).slice(0, 10) : '';
+  document.getElementById('cfgAdminID').value = CONFIG.AdminID || 'admin';
+}
+
+
+async function updateConfig(key, value) {
+  const { error } = await db.from('config').upsert({ key: key, value: String(value) });
+  if (error) console.error('Config update failed:', error);
+}
+
+function startCountdown(startIso) {
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  var el = document.getElementById('countdown');
+  var startMs = startIso ? new Date(startIso).getTime() : 0;
+
+  function tick() {
+    if (!startMs) { el.className = 'countdown'; el.textContent = '--:--:--'; return; }
+    var diff = startMs - Date.now();
+    if (diff <= 0) { el.className = 'countdown live'; el.textContent = '🔴 LIVE'; if (countdownTimer) clearInterval(countdownTimer); return; }
+    el.className = 'countdown ready';
+    var h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+    el.textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+  tick(); countdownTimer = setInterval(tick, 1000);
+}
+
+function toggleSubmission() {
+  var wasOpen = document.getElementById('submissionPill').classList.contains('open');
+  thConfirm({
+    title: (wasOpen ? 'Close' : 'Open') + ' submission?',
+    message: wasOpen ? 'Agents will <strong>no longer be able to submit</strong>.' : 'Agents will be able to <strong>submit results</strong>.',
+    confirmText: wasOpen ? 'Close Submission' : 'Open Submission',
+    tone: wasOpen ? 'danger' : 'info'
+  }).then(async function (ok) {
+    if (!ok) return;
+    const btn = document.getElementById('toggleSubmissionBtn');
+    thBtnLoad(btn);
+    await updateConfig('SubmissionOpen', wasOpen ? 'FALSE' : 'TRUE');
+    thBtnDone(btn);
+    loadSystemStatus();
+    toast('Submission is now ' + (wasOpen ? 'Closed' : 'Open'), 'success');
+  });
+}
+
+async function setStartTime() {
+  var val = document.getElementById('startTimeInput').value;
+  if (!val) { toast('Choose a date and time first.', 'error'); return; }
+  await updateConfig('CountingStartTime', new Date(val).toISOString());
+  toast('Counting start time saved.', 'success');
+  loadSystemStatus();
+}
+
+// ================================================================
+//  LOGIN GATE
+// ================================================================
+var GATE_STATE = { gated: false, opensAt: '' };
+
+async function loadGateStatus() {
+  const { data } = await db.from('config').select('*').in('key', ['LoginGate', 'LoginGateOpensAt']);
+  if (!data) return;
+  GATE_STATE.gated = data.find(r => r.key === 'LoginGate')?.value === 'TRUE';
+  GATE_STATE.opensAt = data.find(r => r.key === 'LoginGateOpensAt')?.value || '';
+  
+  var pill = document.getElementById('gatePill'), btn = document.getElementById('gateToggleBtn');
+  if (GATE_STATE.gated) { pill.className = 'status-pill'; pill.textContent = 'Closed'; btn.innerHTML = '<i class="fas fa-unlock"></i> Open Login'; btn.style.background = ''; btn.style.color = ''; } 
+  else { pill.className = 'status-pill open'; pill.textContent = 'Open'; btn.innerHTML = '<i class="fas fa-lock"></i> Close Login'; btn.style.background = 'var(--danger)'; btn.style.color = '#fff'; }
+}
+
+async function toggleLoginGate() {
+  var next = !GATE_STATE.gated;
+  var input = document.getElementById('gateOpensAtInput');
+  var opensAt = input.value ? new Date(input.value).toISOString() : GATE_STATE.opensAt;
+
+  if (next && !opensAt) { toast('Set a target open time first.', 'error'); return; }
+
+  thConfirm({
+    title: next ? 'Close login?' : 'Re-open login?',
+    message: next ? 'Agents/aspirants will see a countdown card.' : 'Agents/aspirants can log in immediately.',
+    confirmText: next ? 'Close Login' : 'Re-open',
+    tone: next ? 'danger' : 'info'
+  }).then(async function (ok) {
+    if (!ok) return;
+    const btn = document.getElementById('gateToggleBtn');
+    thBtnLoad(btn);
+    await updateConfig('LoginGate', next ? 'TRUE' : 'FALSE');
+    if (opensAt) await updateConfig('LoginGateOpensAt', opensAt);
+    thBtnDone(btn);
+    loadGateStatus();
+    toast('Login gate ' + (next ? 'closed' : 'opened'), 'success');
+  });
+}
+
+async function saveGateOpensAt() {
+  var input = document.getElementById('gateOpensAtInput');
+  if (!input.value) { toast('Pick a date and time first.', 'error'); return; }
+  await updateConfig('LoginGateOpensAt', new Date(input.value).toISOString());
+  toast('Gate opens-at time saved.', 'success');
+}
+
+// ================================================================
+//  ACTIVE USERS
+// ================================================================
+async function loadActiveUsers() {
+  // Since Supabase handles auth, we mock active users based on recently updated profiles (or just mock it for now)
+  // For a true live count, you'd need a 'last_seen' column updated by the portals.
+  document.getElementById('statOnline').textContent = '1'; // Just you
+}
+
+function openActiveUsers() {
+  openModal(modalHead('Active Users', 'Live sessions') + '<div class="empty">Session tracking requires a custom implementation in Supabase.</div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>');
+}
+
+// ================================================================
+//  DATA LOADERS
+// ================================================================
+async function loadAllData() {
+  await Promise.all([loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
+  loadAdminResults();
+  loadSubmissionMatrix();
+}
+
+async function loadWards() {
+  const { data } = await db.from('wards').select('*').order('name');
+  WARDS = data || []; renderWards(); document.getElementById('statWards').textContent = WARDS.length; document.getElementById('badgeWards').textContent = WARDS.length;
+}
+async function loadCentres() {
+  const { data } = await db.from('centres').select('*').order('name');
+  CENTRES = data || []; renderCentres(); document.getElementById('statCentres').textContent = CENTRES.length; document.getElementById('badgeCentres').textContent = CENTRES.length;
+}
+async function loadStreams() {
+  const { data } = await db.from('streams').select('*').order('code');
+  STREAMS = data || []; renderStreams(); document.getElementById('statStreams').textContent = STREAMS.length; document.getElementById('badgeStreams').textContent = STREAMS.length;
+}
+async function loadCandidates() {
+  const { data } = await db.from('candidates').select('*').order('name');
+  CANDIDATES = data || []; renderCandidates(); document.getElementById('statCandidates').textContent = CANDIDATES.length; document.getElementById('badgeCandidates').textContent = CANDIDATES.length;
+}
+async function loadAgents() {
+  const { data } = await db.from('agents').select('*').order('name');
+  AGENTS = data || []; renderAgents(); document.getElementById('statAgents').textContent = AGENTS.length; document.getElementById('badgeAgents').textContent = AGENTS.length;
+}
+async function loadAspirants() {
+  const { data } = await db.from('aspirants').select('*').order('name');
+  ASPIRANTS = data || []; renderAspirants(); document.getElementById('statAspirants').textContent = ASPIRANTS.length; document.getElementById('badgeAspirants').textContent = ASPIRANTS.length;
+}
+
+// ================================================================
+//  RENDERERS (Wards, Centres, Streams, Candidates, Agents, Aspirants)
+// ================================================================
+function renderWards() {
+  var el = document.getElementById('wardsList');
+  if (!WARDS.length) { el.innerHTML = emptyHTML('No wards yet', 'Add your first ward.'); return; }
+  el.innerHTML = '<div class="item-list">' + WARDS.map(w => `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+}
+
+function renderCentres() {
+  var el = document.getElementById('centresList');
+  if (!CENTRES.length) { el.innerHTML = emptyHTML('No centres yet', 'Add centres.'); return; }
+  var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w.name);
+  el.innerHTML = '<div class="item-list">' + CENTRES.map(c => `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+}
+
+function renderStreams() {
+  var el = document.getElementById('streamsList');
+  if (!STREAMS.length) { el.innerHTML = emptyHTML('No streams yet', 'Generate streams from a centre.'); return; }
+  var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c.name);
+  var grouped = {}; STREAMS.forEach(s => { if (!grouped[s.centre_id]) grouped[s.centre_id] = []; grouped[s.centre_id].push(s); });
+  var html = '';
+  for (var centreId in grouped) {
+    var list = grouped[centreId];
+    html += `<div style="margin-bottom:14px;"><div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">${esc(centreMap[centreId])} · ${list.length} streams</div><div class="item-list">`;
+    html += list.map(s => `<span class="item"><span class="item-code">${esc(s.code)}</span><span class="item-actions"><button class="danger" onclick="deleteStream('${esc(s.code)}')"><i class="fas fa-trash"></i></button></span></span>`).join('');
+    html += '</div></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderCandidates() {
+  var el = document.getElementById('candidatesList');
+  if (!CANDIDATES.length) { el.innerHTML = emptyHTML('No candidates yet', 'Add candidates.'); return; }
+  var grouped = {}; POSITIONS.forEach(p => grouped[p] = []); CANDIDATES.forEach(c => { if(!grouped[c.position]) grouped[c.position] = []; grouped[c.position].push(c); });
+  var html = '';
+  POSITIONS.forEach(pos => {
+    var list = grouped[pos]; if (!list.length) return;
+    html += `<div style="margin-bottom:18px;"><div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;"><i class="fas ${POSITION_ICONS[pos]}"></i> ${esc(pos)} · ${list.length}</div><div class="item-list">`;
+    html += list.map(c => `<span class="item"><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">${esc(c.party)}</span><span class="item-actions"><button onclick="editCandidate('${esc(c.code)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCandidate('${esc(c.code)}')"><i class="fas fa-trash"></i></button></span></span>`).join('');
+    html += '</div></div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderAgents() {
+  var el = document.getElementById('agentsList');
+  if (!AGENTS.length) { el.innerHTML = emptyHTML('No agents yet', 'Add agents.'); return; }
+  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + AGENTS.map(a => `<span class="item" style="justify-content:space-between;"><span style="display:flex;align-items:center;gap:8px;flex:1;"><span class="item-code">${esc(a.id)}</span><span class="item-name">${esc(a.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.phone||'')}</span></span><span class="item-actions"><button onclick="openResetPwModal('agent','${esc(a.id)}')"><i class="fas fa-key"></i></button><button onclick="editAgent('${esc(a.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteAgent('${esc(a.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+}
+
+function renderAspirants() {
+  var el = document.getElementById('aspirantsList');
+  if (!ASPIRANTS.length) { el.innerHTML = emptyHTML('No aspirants yet', 'Add aspirants.'); return; }
+  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + ASPIRANTS.map(a => `<span class="item" style="justify-content:space-between;"><span style="display:flex;align-items:center;gap:8px;flex:1;"><span class="item-code">${esc(a.login_code)}</span><span class="item-name">${esc(a.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.position)}</span></span><span class="item-actions"><button onclick="toggleAspirant('${esc(a.id)}')"><i class="fas fa-power-off"></i></button><button onclick="openResetPwModal('aspirant','${esc(a.id)}')"><i class="fas fa-key"></i></button><button onclick="editAspirant('${esc(a.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteAspirant('${esc(a.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+}
+
+function emptyHTML(title, sub) { return `<div class="empty"><i class="fas fa-inbox"></i><div style="font-weight:600;color:var(--text);margin-bottom:4px;">${title}</div><div>${sub}</div></div>`; }
+
+// ================================================================
+//  MODALS & HELPERS
+// ================================================================
+function openModal(html) { document.getElementById('modalContent').innerHTML = html; document.getElementById('modalBg').classList.add('active'); document.body.style.overflow = 'hidden'; }
+function closeModal() { document.getElementById('modalBg').classList.remove('active'); document.body.style.overflow = ''; }
+function modalHead(title, sub) { return `<div class="modal-head"><div><div class="modal-title">${title}</div>${sub?`<div class="modal-sub">${sub}</div>`:''}</div><button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button></div>`; }
+
+// ================================================================
+//  WARDS CRUD
+// ================================================================
+function openWardModal() { openModal(modalHead('Add Ward') + `<div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>`); }
+function editWard(id, name) { openModal(modalHead('Edit Ward', id) + `<div class="form-group"><label>Ward Name</label><input id="m_wardName" value="${escAttr(name)}"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard('${esc(id)}')">Save</button></div>`); }
+async function saveWard(id) {
+  var name = document.getElementById('m_wardName').value.trim();
+  if (!name) return toast('Enter a name.', 'error');
+  if (id) await db.from('wards').update({ name }).eq('id', id);
+  else await db.from('wards').insert({ name });
+  toast('Saved.', 'success'); closeModal(); loadAllData();
+}
+function deleteWard(id) {
+  thConfirm({ title: 'Delete ward?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('wards').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
+
+// ================================================================
+//  CENTRES CRUD
+// ================================================================
+function openCentreModal() {
+  if (!WARDS.length) return toast('Add a ward first.', 'error');
+  var opts = WARDS.map(w => `<option value="${escAttr(w.id)}">${esc(w.name)}</option>`).join('');
+  openModal(modalHead('Add Centre') + `<div class="form-group"><label>Ward</label><select id="m_centreWard">${opts}</select></div><div class="form-group"><label>Centre Name</label><input id="m_centreName"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre()">Save</button></div>`);
+}
+function editCentre(id) {
+  var c = CENTRES.find(x => x.id === id); if (!c) return;
+  var opts = WARDS.map(w => `<option value="${escAttr(w.id)}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
+  openModal(modalHead('Edit Centre', id) + `<div class="form-group"><label>Ward</label><select id="m_centreWard" disabled>${opts}</select></div><div class="form-group"><label>Centre Name</label><input id="m_centreName" value="${escAttr(c.name)}"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre('${esc(id)}')">Save</button></div>`);
+}
+async function saveCentre(id) {
+  var name = document.getElementById('m_centreName').value.trim();
+  if (!name) return toast('Enter a name.', 'error');
+  if (id) await db.from('centres').update({ name }).eq('id', id);
+  else { var wardId = document.getElementById('m_centreWard').value; await db.from('centres').insert({ name, ward_id: wardId }); }
+  toast('Saved.', 'success'); closeModal(); loadAllData();
+}
+function deleteCentre(id) {
+  thConfirm({ title: 'Delete centre?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('centres').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
+
+// ================================================================
+//  STREAMS
+// ================================================================
+function openStreamModal() {
+  if (!CENTRES.length) return toast('Add a centre first.', 'error');
+  var opts = CENTRES.map(c => `<option value="${escAttr(c.id)}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Generate Streams') + `<div class="form-group"><label>Centre</label><select id="m_streamCentre">${opts}</select></div><div class="form-group"><label>Number of streams</label><input id="m_streamCount" type="number" min="1" max="50" value="8"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveStreams()">Generate</button></div>`);
+}
+async function saveStreams() {
+  var centreId = document.getElementById('m_streamCentre').value;
+  var count = parseInt(document.getElementById('m_streamCount').value, 10);
+  if (!centreId || !count || count < 1) return toast('Invalid count.', 'error');
+  
+  var centre = CENTRES.find(c => c.id === centreId);
+  const { error } = await db.rpc('admin_generate_streams', { p_centre_id: centreId, p_count: count, p_ward_id: centre.ward_id });
+  if (error) return toast(error.message, 'error');
+  
+  toast('Streams generated.', 'success'); closeModal(); loadAllData();
+}
+function deleteStream(code) {
+  thConfirm({ title: 'Delete stream?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('streams').delete().eq('code', code); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
+
+// ================================================================
+//  CANDIDATES
+// ================================================================
+function openCandidateModal() {
+  var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  openModal(modalHead('Add Candidate') + 
+    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
+     <div class="form-group"><label>Name</label><input id="m_candName"></div>
+     <div class="form-group"><label>Party</label><input id="m_candParty"></div>
+     <div class="form-group"><label>Code</label><input id="m_candCode"></div>
+     <div class="form-group"><label>Photo URL <span class="hint">(GitHub or Drive)</span></label><input id="m_candPhoto" placeholder="https://github.com/..."></div>
+     <div class="form-group"><label>Color <span class="hint">(e.g. #FFC72C)</span></label><input id="m_candColor" placeholder="#A5CF83"></div>
+     <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate()">Save</button></div>`);
+}
+
+function editCandidate(code) {
+  var c = CANDIDATES.find(x => x.code === code); if (!c) return;
+  var posOpts = POSITIONS.map(p => `<option value="${p}" ${p===c.position?'selected':''}>${p}</option>`).join('');
+  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
+  openModal(modalHead('Edit Candidate', code) + 
+    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
+     <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
+     <div class="form-group"><label>Party</label><input id="m_candParty" value="${escAttr(c.party)}"></div>
+     <div class="form-group"><label>Code</label><input id="m_candCode" value="${escAttr(c.code)}"></div>
+     <div class="form-group"><label>Photo URL</label><input id="m_candPhoto" value="${escAttr(c.photo_url||'')}"></div>
+     <div class="form-group"><label>Color</label><input id="m_candColor" value="${escAttr(c.color||'')}"></div>
+     <div class="form-group" id="m_candWardWrap"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
+  candPosChanged();
+}
+function candPosChanged() { document.getElementById('m_candWardWrap').style.display = document.getElementById('m_candPosition').value === 'MCA' ? 'block' : 'none'; }
+async function saveCandidate(oldCode) {
+  var pos = document.getElementById('m_candPosition').value;
+  var name = document.getElementById('m_candName').value.trim();
+  var party = document.getElementById('m_candParty').value.trim();
+  var code = document.getElementById('m_candCode').value.trim();
+  var ward = document.getElementById('m_candWard').value;
+  var photo = document.getElementById('m_candPhoto').value.trim();
+  var color = document.getElementById('m_candColor').value.trim();
+
+  if (!name || !party || !code) return toast('Fill all fields.', 'error');
+  if (pos === 'MCA' && !ward) return toast('MCA needs a ward.', 'error');
+  
+  // We save the raw URL, the UI will normalize it when reading
+  var payload = { position: pos, name, party, code, ward_id: ward || null, photo_url: photo, color: color };
+  
+  if (oldCode) await db.from('candidates').update(payload).eq('code', oldCode);
+  else await db.from('candidates').insert(payload);
+  
+  toast('Saved.', 'success'); closeModal(); loadAllData();
+}
+function deleteCandidate(code) {
+  thConfirm({ title: 'Delete candidate?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('candidates').delete().eq('code', code); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
+
+// ================================================================
+//  AGENTS & ASPIRANTS (Using RPC)
+// ================================================================
+function openAgentModal() {
+  var streamOpts = STREAMS.map(function(s) {
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">' +
+      '<input type="checkbox" class="agent-stream-cb" value="' + escAttr(s.code) + '" style="width:auto; margin:0;">' +
+      '<span>' + esc(s.code) + '</span></label>';
+  }).join('');
+
+  openModal(modalHead('Add Agent') + `
+    <div class="form-group"><label>Name</label><input id="m_agentName"></div>
+    <div class="form-group"><label>Phone</label><input id="m_agentPhone"></div>
+    <div class="form-group"><label>Assign Streams</label>
+      <div style="max-height:180px;overflow-y:auto;padding:8px 12px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);">
+        ${streamOpts || '<div style="color:var(--text-faint);font-size:12.5px;">No streams available — generate them first.</div>'}
+      </div>
+    </div>
+    <div class="form-group"><label>Email (for login)</label><input id="m_agentEmail" type="email"></div>
+    <div class="form-group"><label>Password</label><input id="m_agentPass" type="password"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent()">Save</button></div>
+  `);
+}
+  function editAgent(id) {
+  var a = AGENTS.find(x => x.id === id); if (!a) return;
+  
+  // Ensure we parse the array correctly (handles both text[] and comma-separated strings)
+  var assigned = Array.isArray(a.assigned_streams) 
+    ? a.assigned_streams 
+    : String(a.assigned_streams || '').split(',').map(s => s.trim());
+
+  var streamOpts = STREAMS.map(function(s) {
+    var checked = assigned.includes(s.code) ? 'checked' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">' +
+      '<input type="checkbox" class="agent-stream-cb" value="' + escAttr(s.code) + '" ' + checked + ' style="width:auto; margin:0;">' +
+      '<span>' + esc(s.code) + '</span></label>';
+  }).join('');
+
+  openModal(modalHead('Edit Agent', id) + `
+    <div class="form-group"><label>Name</label><input id="m_agentName" value="${escAttr(a.name)}"></div>
+    <div class="form-group"><label>Phone</label><input id="m_agentPhone" value="${escAttr(a.phone||'')}"></div>
+    <div class="form-group"><label>Assign Streams</label>
+      <div style="max-height:180px;overflow-y:auto;padding:8px 12px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);">
+        ${streamOpts || '<div style="color:var(--text-faint);font-size:12.5px;">No streams available.</div>'}
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent('${esc(id)}')">Save</button></div>
+  `);
+}
+async function saveAgent(id) {
+  var name = document.getElementById('m_agentName').value.trim();
+  var phone = document.getElementById('m_agentPhone').value.trim();
+  var streams = [].slice.call(document.querySelectorAll('.agent-stream-cb:checked')).map(cb => cb.value);
+
+  if (!name) return toast('Enter agent name.', 'error');
+  if (!streams || streams.length === 0) return toast('Assign at least one stream.', 'error');
+
+  if (id) {
+    // --- EDITING EXISTING AGENT ---
+    try {
+      const { data, error } = await db.from('agents').update({
+        name: name,
+        phone: phone,
+        assigned_streams: streams
+      }).eq('id', id).select(); // <--- .select() forces Supabase to return the updated data
+
+      if (error) {
+        console.error(error);
+        return toast('Database Error: ' + error.message, 'error');
+      }
+      if (!data || data.length === 0) {
+        return toast('Update failed. RLS policy might be blocking you.', 'error');
+      }
+
+      toast('Agent updated.', 'success');
+      closeModal();
+      loadAllData();
+    } catch (err) {
+      console.error(err);
+      toast('An unexpected error occurred.', 'error');
+    }
+  } else {
+    // --- CREATING NEW AGENT ---
+    var email = document.getElementById('m_agentEmail').value.trim();
+    var pw = document.getElementById('m_agentPass').value;
+    
+    if (!email || !pw) return toast('Email and password are required.', 'error');
+
+    const { data, error } = await db.rpc('admin_create_agent', { 
+      p_email: email, p_password: pw, p_name: name, p_phone: phone, p_streams: streams 
+    });
+    
+    if (error || !data.success) return toast(error?.message || 'Failed to create agent.', 'error');
+    toast('Agent created.', 'success');
+    closeModal();
+    loadAllData();
+  }
+}
+function openAspirantModal() {
+  var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
+  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  
+  openModal(modalHead('Add Aspirant', 'Grants live dashboard access') + `
+    <div class="form-group"><label>Full Name</label><input id="m_aspName" placeholder="e.g. John Doe"></div>
+    <div class="form-group"><label>Position</label><select id="m_aspPosition" onchange="aspPosChanged()">${posOpts}</select></div>
+    <div class="form-group" id="m_aspWardWrap" style="display:none;"><label>Ward <span class="hint">(required for MCA)</span></label><select id="m_aspWard">${wardOpts}</select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Login Code</label><input id="m_aspLogin" placeholder="e.g. JD123" style="text-transform:uppercase;"></div>
+      <div class="form-group"><label>Email (for login)</label><input id="m_aspEmail" type="email"></div>
+    </div>
+    <div class="form-group"><label>Password</label><input id="m_aspPass" type="password"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAspirant()">Save</button></div>
+  `);
+}
+function aspPosChanged() { 
+  document.getElementById('m_aspWardWrap').style.display = document.getElementById('m_aspPosition').value === 'MCA' ? 'block' : 'none'; 
+}
+
+async function saveAspirant(id) {
+  var name = document.getElementById('m_aspName').value.trim();
+  var pos = document.getElementById('m_aspPosition').value;
+  var ward = document.getElementById('m_aspWard') ? document.getElementById('m_aspWard').value : null;
+  var login = document.getElementById('m_aspLogin').value.trim().toUpperCase();
+
+  if (!name || !login) return toast('Name and login code are required.', 'error');
+  if (pos === 'MCA' && !ward) return toast('MCA aspirants need a ward.', 'error');
+
+  if (id) {
+    // --- EDITING EXISTING ASPIRANT ---
+    try {
+      const { data, error } = await db.from('aspirants').update({ 
+        name: name, 
+        position: pos, 
+        ward_id: ward || null, 
+        login_code: login 
+      }).eq('id', id).select(); // <--- .select() here too
+
+      if (error) {
+        console.error(error);
+        return toast('Database Error: ' + error.message, 'error');
+      }
+      if (!data || data.length === 0) {
+        return toast('Update failed. RLS policy might be blocking you.', 'error');
+      }
+
+      toast('Aspirant updated.', 'success'); 
+      closeModal(); 
+      loadAllData();
+    } catch (err) {
+      console.error(err);
+      toast('An unexpected error occurred.', 'error');
+    }
+  } else {
+    // --- CREATING NEW ASPIRANT ---
+    var email = document.getElementById('m_aspEmail').value.trim();
+    var pw = document.getElementById('m_aspPass').value;
+    
+    if (!email || !pw) return toast('Email and password are required for new users.', 'error');
+
+    const { data, error } = await db.rpc('admin_create_aspirant', { 
+      p_email: email, p_password: pw, p_name: name, p_position: pos, p_ward: ward || null, p_login: login 
+    });
+    
+    if (error || !data.success) return toast(error?.message || 'Failed to create aspirant.', 'error');
+    toast('Aspirant created.', 'success'); 
+    closeModal(); 
+    loadAllData();
+  }
+}
+
+function editAspirant(id) {
+  var a = ASPIRANTS.find(x => x.id === id); if (!a) return;
+  
+  var posOpts = POSITIONS.map(p => `<option value="${p}" ${p===a.position?'selected':''}>${p}</option>`).join('');
+  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===a.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
+  
+  openModal(modalHead('Edit Aspirant', a.id) + `
+    <div class="form-group"><label>Full Name</label><input id="m_aspName" value="${escAttr(a.name)}"></div>
+    <div class="form-group"><label>Position</label><select id="m_aspPosition" onchange="aspPosChanged()">${posOpts}</select></div>
+    <div class="form-group" id="m_aspWardWrap" style="display:${a.position === 'MCA' ? 'block' : 'none'};"><label>Ward</label><select id="m_aspWard">${wardOpts}</select></div>
+    <div class="form-group"><label>Login Code</label><input id="m_aspLogin" value="${escAttr(a.login_code)}" style="text-transform:uppercase;"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAspirant('${esc(id)}')">Save</button></div>
+  `);
+}
+
+// ================================================================
+//  ADMIN — RESULTS TAB (ward-aware MCA)
+// ================================================================
+var RESULTS_DATA = null;
+var MCA_SUMMARY = null;
+var MCA_VIEW_WARD = '';   // '' = grid view, wardId = drill-in
+var CURRENT_RESULT_POS = 'President';
+
+async function loadAdminResults() {
+  const [ { data: cands }, { data: totals }, { data: wardRes }, { data: streamsData }, { data: resultsData } ] = await Promise.all([
+    db.from('candidates').select('*'), 
+    db.from('candidate_totals').select('*'), 
+    db.from('ward_results').select('*'), 
+    db.from('streams').select('code'), 
+    db.from('results').select('stream_code')
+  ]);
+
+  if (!cands) return;
+  
+  var candMap = {}; 
+  var totalMap = {}; (totals||[]).forEach(t => totalMap[t.candidate_code] = t.total_votes);
+  
+  // 1. NORMALIZE THE IMAGE URLS RIGHT HERE
+  cands.forEach(c => {
+    c.photo_url = normalizeImageUrl(c.photo_url); // Converts GitHub blob to CDN
+    candMap[c.code] = c;
+  });
+
+  // Build results by position
+  var resultsByPos = {}; POSITIONS.forEach(p => resultsByPos[p] = []);
+  cands.forEach(c => resultsByPos[c.position].push({ ...c, votes: totalMap[c.code] || 0 }));
+
+  // Build MCA Summary by Ward
+  var wardsList = [...new Set(wardRes.filter(w => w.position === 'MCA').map(w => w.ward_id))];
+  MCA_SUMMARY = wardsList.map(wId => {
+    var wCands = wardRes.filter(w => w.ward_id === wId && w.position === 'MCA').map(w => {
+      var c = candMap[w.candidate_code] || {};
+      return { 
+        code: w.candidate_code, 
+        name: c.name, 
+        party: c.party, 
+        photo_url: c.photo_url, // This is now the normalized CDN link
+        votes: w.total_votes 
+      };
+    }).sort((a,b) => b.votes - a.votes);
+    
+    var wTotal = wCands.reduce((sum, c) => sum + c.votes, 0);
+    var wLeader = wCands[0] || null;
+    
+    var wardObj = WARDS.find(w => w.id === wId);
+    
+    return { 
+      wardId: wId, 
+      wardName: wardObj ? wardObj.name : wId, 
+      candidates: wCands, 
+      leader: wLeader, 
+      totalVotes: wTotal, 
+      leaderPct: wTotal > 0 && wLeader ? ((wLeader.votes / wTotal) * 100).toFixed(1) : '0.0' 
+    };
+  }).sort((a,b) => a.wardName.localeCompare(b.wardName));
+
+  RESULTS_DATA = { 
+    results: resultsByPos, 
+    reported: new Set((resultsData||[]).map(r => r.stream_code)).size, 
+    totalStreams: (streamsData||[]).length 
+  };
+  
+  document.getElementById('resultsSub').textContent = RESULTS_DATA.reported + ' of ' + RESULTS_DATA.totalStreams + ' streams have reported · live';
+  renderResultTabs();
+  renderResults();
+}
+
+async function refreshResults(btn) {
+  if (btn) thBtnLoad(btn, 'Refreshing…');
+  await loadAdminResults();
+  if (btn) thBtnDone(btn);
+}
+  
+function renderResultTabs() {
+  document.getElementById('resultsPosTabs').innerHTML = POSITIONS.map(pos => {
+    var list = (RESULTS_DATA.results && RESULTS_DATA.results[pos]) || [];
+    var total = list.reduce(function (s, r) { return s + r.votes; }, 0);
+    var active = pos === CURRENT_RESULT_POS ? ' active' : '';
+    var count = (pos === 'MCA') ? (MCA_SUMMARY ? MCA_SUMMARY.length : 0) : list.length;
+    var label = (pos === 'MCA') ? count + ' wards' : total.toLocaleString() + ' votes';
+    
+    return '<button class="position-tab' + active + '" onclick="switchResultPos(\'' + escAttr(pos) + '\')">' +
+      esc(pos) + '<span class="pcount">· ' + label + '</span></button>';
+  }).join('');
+}
+
+function switchResultPos(pos) {
+  CURRENT_RESULT_POS = pos;
+  if (pos === 'MCA') MCA_VIEW_WARD = ''; // reset to grid view
+  loadAdminResults();
+}
+
+function renderResults() {
+  var el = document.getElementById('resultsList');
+  if (!RESULTS_DATA) return;
+
+  // === MCA special case ===
+  if (CURRENT_RESULT_POS === 'MCA') {
+    if (MCA_VIEW_WARD) return renderMCADrillIn();
+    return renderMCAGrid();
+  }
+
+  // === All other positions: ranked list ===
+  var list = (RESULTS_DATA.results && RESULTS_DATA.results[CURRENT_RESULT_POS]) || [];
+  if (!list.length) {
+    el.innerHTML = '<div class="empty"><i class="fas fa-inbox"></i>' +
+      '<div style="font-weight:600;color:var(--text);margin-bottom:4px;">No results for ' + esc(CURRENT_RESULT_POS) + ' yet</div>' +
+      '<div>Results will appear as agents submit tallies.</div></div>';
+    return;
+  }
+
+  var total = list.reduce(function (s, r) { return s + r.votes; }, 0);
+  var sorted = list.slice().sort(function (a, b) { return b.votes - a.votes; });
+
+  el.innerHTML = sorted.map(function (c, idx) {
+    var pct = total > 0 ? (c.votes / total * 100) : 0;
+    var leader = idx === 0 && c.votes > 0 ? ' leader' : '';
+    var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+    var initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
+    var photoHtml = c.photo_url
+      ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">'
+      : initial;
+
+    return '<div class="result-row' + leader + '">' +
+      '<div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' +
+        photoHtml + '<span class="avatar-rank">' + rank + '</span>' +
+      '</div>' +
+      '<div class="result-info">' +
+        '<div class="result-name">' + esc(c.name) + '</div>' +
+        '<div class="result-party">' + esc(c.party) + '</div>' +
+      '</div>' +
+      '<div class="result-bar-track"><div class="result-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<div class="result-votes">' + c.votes.toLocaleString() + '</div>' +
+      '<div class="result-pct">' + pct.toFixed(1) + '%</div>' +
+    '</div>';
+  }).join('');
+}
+
+// --- MCA grid view: one card per ward, showing the leader ---
+function renderMCAGrid() {
+  var el = document.getElementById('resultsList');
+  if (!MCA_SUMMARY || !MCA_SUMMARY.length) {
+    el.innerHTML = '<div class="empty"><i class="fas fa-inbox"></i><div style="font-weight:600;">No MCA candidates configured</div></div>';
+    return;
+  }
+
+  var html = '<div class="mca-grid">';
+  MCA_SUMMARY.forEach(function (w) {
+    var hasData = w.candidates.length > 0;
+    var leaderBlock;
+    
+    if (hasData && w.leader) {
+      leaderBlock =
+        '<div class="mca-leader">' +
+          '<div class="mca-crown">🥇</div>' +
+          '<div class="mca-leader-name">' + esc(w.leader.name) + '</div>' +
+          '<div class="mca-leader-party">' + esc(w.leader.party) + '</div>' +
+          '<div class="mca-leader-stats">' +
+            '<span class="votes">' + w.leader.votes.toLocaleString() + '</span>' +
+            '<span class="sep">·</span>' +
+            '<span class="pct">' + w.leaderPct + '%</span>' +
+          '</div>' +
+        '</div>';
+    } else {
+      leaderBlock =
+        '<div class="mca-leader empty-leader">' +
+          '<i class="fas fa-hourglass-half"></i>' +
+          '<div class="mca-leader-name">No results yet</div>' +
+          '<div class="mca-leader-party">Waiting for agents</div>' +
+        '</div>';
+    }
+
+    html += '<div class="mca-card" onclick="drillIntoMCAWard(\'' + escAttr(w.wardId) + '\')">' +
+      '<div class="mca-card-head">' +
+        '<div class="mca-ward-name">' + esc(w.wardName) + '</div>' +
+        '<div class="mca-cand-count">' + w.candidates.length + ' candidate' + (w.candidates.length === 1 ? '' : 's') + '</div>' +
+      '</div>' + leaderBlock +
+      (hasData ? '<button class="mca-view-btn">View full race <i class="fas fa-arrow-right"></i></button>' : '') +
+    '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// --- MCA drill-in: single ward, full ranked list ---
+function renderMCADrillIn() {
+  var el = document.getElementById('resultsList');
+  var ward = MCA_SUMMARY && MCA_SUMMARY.find(function (w) { return w.wardId === MCA_VIEW_WARD; });
+
+  if (!ward) { el.innerHTML = '<div class="empty">Ward not found.</div>'; return; }
+
+  var sorted = ward.candidates.slice().sort(function (a, b) { return b.votes - a.votes; });
+  var total = sorted.reduce(function (s, r) { return s + r.votes; }, 0);
+
+  var header = '<div class="mca-drill-head">' +
+    '<button class="btn btn-ghost btn-sm" onclick="backToMCAGrid()"><i class="fas fa-arrow-left"></i> All wards</button>' +
+    '<div class="mca-drill-title">' +
+      '<div class="mca-drill-ward">' + esc(ward.wardName) + '</div>' +
+      '<div class="mca-drill-sub">MCA race · ' + sorted.length + ' candidate' + (sorted.length === 1 ? '' : 's') + ' · ' + total.toLocaleString() + ' total votes</div>' +
+    '</div></div>';
+
+  if (!sorted.length) {
+    el.innerHTML = header + '<div class="empty" style="margin-top:16px;"><i class="fas fa-inbox"></i><div>No results submitted for this ward yet.</div></div>';
+    return;
+  }
+
+  var rows = sorted.map(function (c, idx) {
+    var pct = total > 0 ? (c.votes / total * 100) : 0;
+    var leader = idx === 0 && c.votes > 0 ? ' leader' : '';
+    var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+    var initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
+    var photoHtml = c.photo_url
+      ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">'
+      : initial;
+
+    return '<div class="result-row' + leader + '">' +
+      '<div class="avatar-wrap' + (c.photo ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + rank + '</span></div>' +
+      '<div class="result-info">' +
+        '<div class="result-name">' + esc(c.name) + '</div>' +
+        '<div class="result-party">' + esc(c.party) + '</div>' +
+      '</div>' +
+      '<div class="result-bar-track"><div class="result-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<div class="result-votes">' + c.votes.toLocaleString() + '</div>' +
+      '<div class="result-pct">' + pct.toFixed(1) + '%</div>' +
+    '</div>';
+  }).join('');
+
+  el.innerHTML = header + rows;
+}
+
+function drillIntoMCAWard(wardId) {
+  MCA_VIEW_WARD = wardId;
+  renderResults();
+}
+
+function backToMCAGrid() {
+  MCA_VIEW_WARD = '';
+  renderResults();
+}
+
+// ================================================================
+//  ADMIN — SUBMISSION TRACKER
+// ================================================================
+var TRACKER_DATA = null;
+var POSITION_SHORT_MAP = {
+  'President': 'P',
+  'Governor':  'G',
+  'Senator':   'S',
+  'MP':        'M',
+  'Women Rep': 'W',
+  'MCA':       'C'
+};
+
+async function refreshTracker(btn) {
+  if (btn) thBtnLoad(btn, 'Refreshing…');
+  await loadSubmissionMatrix();
+  if (btn) thBtnDone(btn);
+}
+
+async function loadSubmissionMatrix() {
+  document.getElementById('trackerList').innerHTML = '<div class="loading-inline"><i class="fas fa-spinner"></i>Loading tracker…</div>';
+  
+  try {
+    const [{ data: wards }, { data: centres }, { data: streams }, { data: results }] = await Promise.all([
+      db.from('wards').select('*').order('name'),
+      db.from('centres').select('*'),
+      db.from('streams').select('*'),
+      db.from('results').select('stream_code, position')
+    ]);
+
+    // Build submission index
+    var submitted = {};
+    (results || []).forEach(r => {
+      if (!submitted[r.stream_code]) submitted[r.stream_code] = {};
+      submitted[r.stream_code][r.position] = true;
+    });
+
+    var totalStreams = (streams || []).length;
+    var totalCells = totalStreams * POSITIONS.length;
+    var submittedCells = (results || []).length;
+    var fullyReported = 0;
+    var groups = [];
+
+    (wards || []).forEach(w => {
+      var wCentres = (centres || []).filter(c => c.ward_id === w.id);
+      wCentres.forEach(c => {
+        var cStreams = (streams || []).filter(s => s.centre_id === c.id).sort((a,b) => a.stream_number - b.stream_number);
+        if (!cStreams.length) return;
+
+        var streamRows = cStreams.map(s => {
+          var statuses = {};
+          var submittedCount = 0;
+          
+          POSITIONS.forEach(pos => {
+            if (submitted[s.code] && submitted[s.code][pos]) {
+              statuses[pos] = { status: 'submitted' };
+              submittedCount++;
+            } else {
+              statuses[pos] = null;
+            }
+          });
+
+          var isComplete = submittedCount === POSITIONS.length;
+          if (isComplete) fullyReported++;
+
+          return {
+            code: s.code,
+            streamNumber: s.stream_number,
+            label: 'STR ' + String(s.stream_number).padStart(2, '0'),
+            statuses: statuses,
+            submittedCount: submittedCount,
+            isComplete: isComplete
+          };
+        });
+
+        groups.push({
+          wardId: w.id,
+          wardName: w.name,
+          centreId: c.id,
+          centreName: c.name,
+          streams: streamRows
+        });
+      });
+    });
+
+    TRACKER_DATA = {
+      positions: POSITIONS,
+      groups: groups,
+      summary: {
+        totalStreams: totalStreams,
+        totalCells: totalCells,
+        submittedCells: submittedCells,
+        fullyReportedStreams: fullyReported
+      }
+    };
+
+    populateTrackerWards();
+    renderTracker();
+    updateTrackerBadge();
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById('trackerList').innerHTML = '<div class="empty">Failed to load tracker data.</div>';
+  }
+}
+
+function populateTrackerWards() {
+  if (!TRACKER_DATA) return;
+  var sel = document.getElementById('trackerWard');
+  var wardSet = {};
+  TRACKER_DATA.groups.forEach(g => { wardSet[g.wardId] = g.wardName; });
+  
+  var current = sel.value;
+  sel.innerHTML = '<option value="">All Wards</option>' +
+    Object.keys(wardSet).sort((a,b) => wardSet[a].localeCompare(wardSet[b])).map(id => 
+      '<option value="' + escAttr(id) + '">' + esc(wardSet[id]) + '</option>'
+    ).join('');
+  
+  if (current) sel.value = current;
+  trackerCentreOptions();
+}
+
+function trackerCentreOptions() {
+  if (!TRACKER_DATA) return;
+  var wardFilter = document.getElementById('trackerWard').value;
+  var sel = document.getElementById('trackerCentre');
+  var centreSet = {};
+  
+  TRACKER_DATA.groups.forEach(g => {
+    if (wardFilter && g.wardId !== wardFilter) return;
+    centreSet[g.centreId] = g.centreName;
+  });
+  
+  var current = sel.value;
+  sel.innerHTML = '<option value="">All Centres</option>' +
+    Object.keys(centreSet).sort().map(id => 
+      '<option value="' + escAttr(id) + '">' + esc(centreSet[id]) + '</option>'
+    ).join('');
+    
+  if (current && centreSet[current]) sel.value = current;
+}
+
+function updateTrackerBadge() {
+  if (!TRACKER_DATA) return;
+  var s = TRACKER_DATA.summary;
+  document.getElementById('badgeTracker').textContent = s.fullyReportedStreams + '/' + s.totalStreams;
+}
+
+function renderTracker() {
+  if (!TRACKER_DATA) return;
+  
+  var wardFilter = document.getElementById('trackerWard').value;
+  var centreFilter = document.getElementById('trackerCentre').value;
+  var statusFilter = document.getElementById('trackerStatus').value;
+
+  // 1. Summary Strip
+  var s = TRACKER_DATA.summary;
+  var pct = s.totalCells > 0 ? Math.round(s.submittedCells / s.totalCells * 100) : 0;
+  
+  document.getElementById('trackerSummary').innerHTML =
+    '<div class="tracker-stat"><div class="num">' + s.totalStreams + '</div><div class="lbl">Streams</div></div>' +
+    '<div class="tracker-stat"><div class="num">' + s.fullyReportedStreams + '</div><div class="lbl">Complete</div></div>' +
+    '<div class="tracker-stat"><div class="num">' + s.submittedCells + '</div><div class="lbl">Submissions</div></div>' +
+    '<div class="tracker-stat pct"><div class="num">' + pct + '%</div><div class="lbl">Overall</div></div>';
+
+  // 2. Filter groups
+  var visibleGroups = TRACKER_DATA.groups.filter(g => {
+    if (wardFilter && g.wardId !== wardFilter) return false;
+    if (centreFilter && g.centreId !== centreFilter) return false;
+    return true;
+  });
+
+  // 3. Render Stream Rows
+  var html = '';
+  visibleGroups.forEach(g => {
+    var streamsToShow = g.streams.filter(st => {
+      if (statusFilter === 'complete') return st.isComplete;
+      if (statusFilter === 'partial') return st.submittedCount > 0 && !st.isComplete;
+      if (statusFilter === 'pending') return st.submittedCount === 0;
+      return true;
+    });
+    
+    if (!streamsToShow.length) return;
+
+    html += '<div class="tracker-group">';
+    html += '<div class="tracker-group-head"><div>';
+    html += '<div class="tracker-ward">' + esc(g.wardName) + '</div>';
+    html += '<div class="tracker-centre">' + esc(g.centreName) + '</div>';
+    html += '</div><div class="tracker-group-count">' +
+            g.streams.filter(x => x.isComplete).length + '/' + g.streams.length + ' complete</div></div>';
+
+    streamsToShow.forEach(st => {
+      html += '<div class="stream-row' + (st.isComplete ? ' complete' : '') + '">';
+      html += '<div class="stream-id"><div class="stream-name">' + esc(g.centreName) + ' · ' + esc(st.label) + '</div>';
+      html += '<div class="stream-code">' + esc(st.code) + '</div></div>';
+      
+      html += '<div class="track-pips">';
+      TRACKER_DATA.positions.forEach(pos => {
+        var hit = st.statuses[pos];
+        var short = POSITION_SHORT_MAP[pos] || pos.charAt(0);
+        var tip = hit ? pos + ' · tap to view results' : pos + ' · not submitted yet';
+        
+        if (hit) {
+          html += '<button type="button" class="track-pip done" title="' + escAttr(tip) + '" onclick="openTrackerPip(\'' + escAttr(st.code) + '\',\'' + escAttr(pos) + '\')">' + short + '</button>';
+        } else {
+          html += '<span class="track-pip pending" title="' + escAttr(tip) + '">' + short + '</span>';
+        }
+      });
+      html += '</div>';
+      html += '<div class="stream-progress">' + st.submittedCount + '/' + TRACKER_DATA.positions.length + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  if (!html) {
+    html = '<div class="empty"><i class="fas fa-inbox"></i><div>No streams match the current filters.</div></div>';
+  }
+  document.getElementById('trackerList').innerHTML = html;
+}
+
+async function openTrackerPip(streamCode, position) {
+  var sheet = document.getElementById('sheetContent');
+  
+  var ctx = null;
+  if (TRACKER_DATA) {
+    TRACKER_DATA.groups.forEach(function (g) {
+      g.streams.forEach(function (st) {
+        if (st.code === streamCode) ctx = { group: g, stream: st };
+      });
+    });
+  }
+  var label = ctx ? ctx.stream.label : streamCode;
+  var centreName = ctx ? ctx.group.centreName : '';
+  var wardName = ctx ? ctx.group.wardName : '';
+
+  document.getElementById('sheetBg').classList.add('active');
+  sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="loading-inline"><i class="fas fa-spinner"></i>Loading submission…</div>';
+
+  try {
+    // THE FIX: We ONLY fetch the results. No joins needed!
+    const { data, error } = await db.from('results')
+      .select('votes, submitted_by, created_at, candidate_code')
+      .eq('stream_code', streamCode).eq('position', position);
+
+    if (error) throw error;
+
+    if (!data || !data.length) {
+      sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty"><div class="empty-title">Not submitted yet</div></div>';
+      return;
+    }
+
+    // We use the global CANDIDATES array to build the results
+    const mappedResults = data.map(r => {
+        var c = CANDIDATES.find(x => x.code === r.candidate_code) || {};
+        return {
+            candidateName: c.name || r.candidate_code, 
+            party: c.party || 'Unknown', 
+            photo_url: normalizeImageUrl(c.photo_url), // Normalized directly from the global array
+            votes: r.votes
+        };
+    }).sort((a, b) => b.votes - a.votes);
+
+    const res = {
+        submitted: true, 
+        submittedBy: data[0].submitted_by, 
+        submittedByName: data[0].submitted_by, 
+        submittedAt: data[0].created_at ? new Date(data[0].created_at).toLocaleString() : 'Unknown time', 
+        results: mappedResults
+    };
+    
+    renderTrackerPipResult(res, position, label, centreName, wardName);
+
+  } catch (e) {
+    console.error("PIP Error:", e);
+    sheet.innerHTML = '<div class="empty">Error loading results: ' + esc(e.message) + '</div>';
+  }
+}
+function renderTrackerPipResult(res, position, label, centreName, wardName) {
+  var sheet = document.getElementById('sheetContent'); 
+  var total = (res.results || []).reduce(function (s, r) { return s + (Number(r.votes) || 0); }, 0);
+  
+  var infoHtml = '<div class="pip-result-info">' +
+    '<div class="row"><i class="fas fa-user-check user"></i>Submitted by <strong>' + esc(res.submittedByName || res.submittedBy || 'Unknown') + '</strong></div>' +
+    '<div class="row"><i class="fas fa-clock clock"></i>' + esc(res.submittedAt || 'Unknown time') + '</div>' +
+    '<div class="row"><i class="fas fa-lock lock"></i>Locked · ' + total.toLocaleString() + ' total votes</div>' +
+  '</div>';
+  
+  var rowsHtml = (res.results || []).map(function (c, idx) {
+    var votes = Number(c.votes) || 0; 
+    var pct = total > 0 ? (votes / total * 100).toFixed(1) : '0.0'; 
+    var isLead = idx === 0 && votes > 0; 
+    var medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+    
+    var initial = c.candidateName ? c.candidateName.charAt(0).toUpperCase() : '?'; 
+    var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
+    
+    // THE FIX: Using the Admin's 'result-row' CSS classes
+    return '<div class="result-row' + (isLead ? ' leader' : '') + '" style="margin-bottom:8px;cursor:default;">' +
+      '<div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + 
+        photoHtml + 
+        '<span class="avatar-rank">' + medal + '</span>' + 
+      '</div>' +
+      '<div class="result-info">' +
+        '<div class="result-name">' + esc(c.candidateName) + '</div>' +
+        '<div class="result-party">' + esc(c.party) + '</div>' +
+      '</div>' +
+      '<div class="result-votes">' + votes.toLocaleString() + '</div>' +
+      '<div class="result-pct">' + pct + '%</div>' +
+    '</div>';
+  }).join('');
+  
+  sheet.innerHTML = 
+    '<div class="sheet-head">' +
+      '<div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div>' +
+      '<div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div>' +
+      '<button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button>' +
+    '</div>' + 
+    infoHtml + 
+    rowsHtml;
+}
+
+function closeSheet() {
+  document.getElementById('sheetBg').classList.remove('active');
+}
+
+// ================================================================
+//  EXPORT PDF & OTHERS (Mocked for UI stability)
+// ================================================================
+
+  // ================================================================
+//  EXPORT PDF
+// ================================================================
+var exportSelectedPos = null;
+
+function openExportModal() {
+  exportSelectedPos = null;
+  document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.remove('active'); });
+  document.getElementById('exportGoBtn').disabled = true;
+  document.getElementById('exportModal').classList.add('active');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.remove('active');
+}
+
+function selectExportPos(pos) {
+  exportSelectedPos = pos;
+  document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.toggle('active', b.dataset.pos === pos); });
+  document.getElementById('exportGoBtn').disabled = false;
+}
+
+async function generatePDF() {
+  if (!exportSelectedPos) return;
+  var pos = exportSelectedPos;
+  var btn = document.getElementById('exportGoBtn');
+  
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+
+  try {
+    // 1. Fetch all necessary data from Supabase
+    const [ { data: cands }, { data: totals }, { data: wardRes }, { data: streamsData }, { data: resultsData }, { data: wardsData } ] = await Promise.all([
+      db.from('candidates').select('*').eq('position', pos), 
+      db.from('candidate_totals').select('*'), 
+      db.from('ward_results').select('*').eq('position', pos), 
+      db.from('streams').select('code, ward_id'), 
+      db.from('results').select('stream_code').eq('position', pos),
+      db.from('wards').select('*')
+    ]);
+
+    // 2. Process data for the PDF
+    var candMap = {}; cands.forEach(c => candMap[c.code] = c);
+    var totalMap = {}; (totals||[]).forEach(t => totalMap[t.candidate_code] = t.total_votes);
+
+    var leaderboard = cands.map(c => ({
+      name: c.name, party: c.party, votes: totalMap[c.code] || 0
+    })).sort((a,b) => b.votes - a.votes);
+    
+    var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
+
+    var wardsList = (wardsData || []).map(w => {
+      var wCands = (wardRes||[]).filter(wr => wr.ward_id === w.id).map(wr => {
+        var c = candMap[wr.candidate_code] || {};
+        return { name: c.name, party: c.party, votes: wr.total_votes };
+      }).sort((a,b) => b.votes - a.votes);
+      var wTotal = wCands.reduce((sum, c) => sum + c.votes, 0);
+      return { wardName: w.name, candidates: wCands, totalVotes: wTotal };
+    }).filter(w => w.candidates.length > 0);
+
+    var data = {
+      position: pos,
+      constituency: CONFIG.Constituency || 'Constituency',
+      county: CONFIG.County || '',
+      leaderboard: leaderboard,
+      totalVotes: totalVotes,
+      wards: wardsList,
+      reported: new Set((resultsData||[]).map(r => r.stream_code)).size,
+      totalStreams: (streamsData||[]).length,
+      generatedAt: new Date().toISOString()
+    };
+
+    // 3. Build and save the PDF
+    buildPositionPDF(data);
+    
+    closeExportModal();
+    toast('Report downloaded.', 'success');
+  } catch (e) {
+    console.error(e);
+    toast('PDF generation failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-file-pdf"></i> Generate PDF';
+  }
+}
+
+function buildPositionPDF(data) {
+  var jsPDF = window.jspdf.jsPDF;
+  var doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+
+  var pageW = 210, pageH = 297, marginL = 16, marginR = 16;
+  var headerH = 18, footerH = 14, contentTop = headerH + 10, contentBottom = pageH - footerH - 6;
+  var GREEN = [165, 207, 131], GREEN_DARK = [126, 174, 92], INK = [26, 26, 25], SLATE = [67, 86, 99], BORDER = [230, 230, 230];
+
+  var generatedAt = new Date(data.generatedAt);
+  var timestamp = generatedAt.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  function drawHeader() {
+    doc.setFillColor(GREEN[0], GREEN[1], GREEN[2]); doc.rect(0, 0, pageW, headerH, 'F');
+    doc.setFillColor(INK[0], INK[1], INK[2]); doc.circle(marginL + 4, headerH / 2, 4, 'F');
+    doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.8);
+    doc.line(marginL + 2.2, headerH / 2, marginL + 3.6, headerH / 2 + 1.5);
+    doc.line(marginL + 3.6, headerH / 2 + 1.5, marginL + 6, headerH / 2 - 1.8);
+    doc.setTextColor(INK[0], INK[1], INK[2]); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('TallyHub', marginL + 11, headerH / 2 + 1);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+    doc.text('LIVE RESULTS · ' + data.position.toUpperCase(), pageW - marginR, headerH / 2 - 1, { align: 'right' });
+    doc.text(data.constituency + (data.county ? ' · ' + data.county : ''), pageW - marginR, headerH / 2 + 3, { align: 'right' });
+  }
+
+  function drawFooter() {
+    var y = pageH - footerH + 4;
+    doc.setDrawColor(BORDER[0], BORDER[1], BORDER[2]); doc.setLineWidth(0.2); doc.line(marginL, y - 4, pageW - marginR, y - 4);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+    doc.text('Generated by TallyHub', marginL, y + 1);
+    doc.text('Page ' + doc.internal.getCurrentPageInfo().pageNumber + ' of ' + doc.internal.getNumberOfPages(), pageW / 2, y + 1, { align: 'center' });
+    doc.text('Provisional — not official until certified', pageW - marginR, y + 1, { align: 'right' });
+  }
+
+  var currentY = contentTop;
+  drawHeader();
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(data.position.toUpperCase(), marginL, currentY + 4);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.constituency + (data.county ? ' · ' + data.county : ''), marginL, currentY + 11);
+  doc.setFontSize(8.5); doc.text(timestamp + ' · ' + data.reported + ' of ' + data.totalStreams + ' streams reported', marginL, currentY + 17);
+  currentY += 24;
+
+  doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(1); doc.line(marginL, currentY, pageW - marginR, currentY); currentY += 8;
+
+  // Constituency Overview
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('CONSTITUENCY OVERVIEW', marginL, currentY);
+  doc.setDrawColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.setLineWidth(0.6); doc.line(marginL, currentY + 2, marginL + 24, currentY + 2); currentY += 8;
+
+  if (!data.leaderboard.length) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
+  } else {
+    var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
+    doc.autoTable({
+      startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+      headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
+      columnStyles: { 0: { cellWidth: 18, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
+      margin: { left: marginL, right: marginR }
+    });
+    currentY = doc.lastAutoTable.finalY + 4;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('Total votes cast: ' + data.totalVotes.toLocaleString(), marginL, currentY); currentY += 8;
+  }
+
+  // Ward Breakdown
+  if (data.wards.length) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('WARD BREAKDOWN', marginL, currentY);
+    doc.setDrawColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.setLineWidth(0.6); doc.line(marginL, currentY + 2, marginL + 24, currentY + 2); currentY += 8;
+    
+    data.wards.forEach(w => {
+      if (currentY > contentBottom - 20) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(w.wardName.toUpperCase(), marginL, currentY); currentY += 5;
+      
+      var wRows = w.candidates.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), w.totalVotes > 0 ? ((c.votes / w.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
+      doc.autoTable({
+        startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: wRows, theme: 'plain',
+        styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+        headStyles: { fontStyle: 'bold', fontSize: 7.5, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.2 } },
+        columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 35, textColor: SLATE }, 3: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 16, halign: 'right', textColor: SLATE } },
+        margin: { left: marginL, right: marginR }
+      });
+      currentY = doc.lastAutoTable.finalY + 6;
+    });
+  }
+
+  for (var p = 1; p <= doc.internal.getNumberOfPages(); p++) { doc.setPage(p); drawFooter(); }
+  
+  var date = new Date(); var ymd = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+  var safePos = data.position.replace(/\s+/g, ''); var safeCon = data.constituency.replace(/\s+/g, '');
+  doc.save('TallyHub-' + safePos + '-' + safeCon + '-' + ymd + '.pdf');
+}
+// ================================================================
+//  SETTINGS & CONFIG
+// ================================================================
+async function saveElectionSettings() {
+  var c = document.getElementById('cfgConstituency').value.trim();
+  var county = document.getElementById('cfgCounty').value.trim();
+  var date = document.getElementById('cfgElectionDate').value;
+
+  // Save to database. onConflict: 'key' ensures we UPDATE, not duplicate
+  const { error } = await db.from('config').upsert([
+    { key: 'Constituency', value: c },
+    { key: 'County', value: county },
+    { key: 'ElectionDate', value: date || '' }
+  ], { onConflict: 'key' });
+
+  if (error) {
+    console.error("Save error:", error);
+    return toast('Failed to save: ' + error.message, 'error');
+  }
+  
+  // Update the UI immediately
+  CONFIG.Constituency = c;
+  CONFIG.County = county;
+  document.getElementById('constituencyLabel').textContent = c ? c + ' · ' + county : 'Configure your election';
+  
+  toast('Settings saved successfully.', 'success');
+}
+async function saveAdminCredentials() {
+  var id = document.getElementById('cfgAdminID').value.trim();
+  var pw = document.getElementById('cfgAdminPass').value;
+  var pw2 = document.getElementById('cfgAdminPass2').value;
+
+  if (!id) return toast('Admin ID cannot be empty.', 'error');
+  if (pw || pw2) {
+    if (pw.length < 4) return toast('Password must be at least 4 characters.', 'error');
+    if (pw !== pw2) return toast('Passwords do not match.', 'error');
+  }
+
+  try {
+    // 1. Update the AdminID in config
+    await db.from('config').upsert({ key: 'AdminID', value: id });
+    
+    // 2. If password was provided, update the actual Supabase Auth user
+    if (pw) {
+      const { error } = await db.auth.updateUser({ password: pw });
+      if (error) throw error;
+    }
+    
+    toast('Credentials updated successfully.', 'success');
+    document.getElementById('cfgAdminPass').value = '';
+    document.getElementById('cfgAdminPass2').value = '';
+  } catch (e) {
+    toast(e.message || 'Failed to update credentials.', 'error');
+  }
+}
+
+// ================================================================
+//  AGENTS & ASPIRANTS (Actions)
+// ================================================================
+function openResetPwModal(kind, id) {
+  openModal(
+    modalHead('Reset Password', kind === 'agent' ? 'Agent ' + id : 'Aspirant ' + id) +
+    '<div class="form-group"><label>New Password</label><input id="m_newPw" type="password" placeholder="Min 4 characters"></div>' +
+    '<div class="form-group"><label>Confirm Password</label><input id="m_newPw2" type="password"></div>' +
+    '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitResetPw(\'' + kind + '\',\'' + escAttr(id) + '\')"><i class="fas fa-key"></i> Reset</button></div>'
+  );
+}
+
+async function submitResetPw(kind, id) {
+  var pw = document.getElementById('m_newPw').value;
+  var pw2 = document.getElementById('m_newPw2').value;
+  
+  if (!pw || pw.length < 4) return toast('Password must be at least 4 characters.', 'error');
+  if (pw !== pw2) return toast('Passwords do not match.', 'error');
+
+  // We need the email of the agent/aspirant to update their auth account
+  var list = kind === 'agent' ? AGENTS : ASPIRANTS;
+  var person = list.find(x => String(x.id) === String(id));
+  
+  if (!person) return toast('User not found.', 'error');
+  
+  // Get email from auth.users based on auth_user_id
+  // Since we can't query auth.users directly from the client, we rely on the RPC we just created
+  // We'll fetch the email from a view or just use the auth_user_id directly if we had a join.
+  // Wait, we can't query auth.users. We have to rely on the email format or pass the auth_user_id.
+  
+  // Actually, let's just update it by auth_user_id using a new RPC.
+  const { data, error } = await db.rpc('admin_reset_password_by_id', { p_auth_id: person.auth_user_id, p_new_password: pw });
+  
+  if (error || (data && !data.success)) {
+    toast(error?.message || 'Failed to reset password.', 'error');
+    return;
+  }
+  
+  toast('Password reset successfully.', 'success');
+  closeModal();
+}
+
+async function toggleAspirant(id) {
+  var person = ASPIRANTS.find(x => x.id === id);
+  if (!person) return;
+  
+  // Toggle is_spectator (true becomes false, false becomes true)
+  var newStatus = !person.is_spectator;
+  const { error } = await db.from('aspirants').update({ is_spectator: newStatus }).eq('id', id);
+  
+  if (error) return toast('Failed to toggle status.', 'error');
+  
+  toast('Aspirant ' + (newStatus ? 'Deactivated' : 'Activated') + '.', 'success');
+  loadAllData();
+}
+
+
+function deleteAgent(id) {
+  thConfirm({ 
+    title: 'Delete agent?', 
+    message: 'This permanently removes their login and profile.', 
+    confirmText: 'Delete', 
+    tone: 'danger' 
+  }).then(async ok => {
+    if (ok) { 
+      var agent = AGENTS.find(x => x.id === id);
+      if (!agent) return toast('Agent not found in local state.', 'error');
+
+      const { data, error } = await db.rpc('admin_delete_user', { 
+        p_auth_id: agent.auth_user_id || null, 
+        p_table: 'agents', 
+        p_id: agent.id 
+      });
+      
+      if (error) return toast('Network error: ' + error.message, 'error');
+      if (!data.success) return toast('Database error: ' + data.message, 'error');
+      
+      toast('Agent completely deleted.', 'success');
+      loadAllData(); 
+    }
+  });
+}
+
+function deleteAspirant(id) {
+  thConfirm({ 
+    title: 'Delete aspirant?', 
+    message: 'This permanently removes their login and profile.', 
+    confirmText: 'Delete', 
+    tone: 'danger' 
+  }).then(async ok => {
+    if (ok) { 
+      var aspirant = ASPIRANTS.find(x => x.id === id);
+      if (!aspirant) return toast('Aspirant not found in local state.', 'error');
+
+      const { data, error } = await db.rpc('admin_delete_user', { 
+        p_auth_id: aspirant.auth_user_id || null, 
+        p_table: 'aspirants', 
+        p_id: aspirant.id 
+      });
+      
+      if (error) return toast('Network error: ' + error.message, 'error');
+      if (!data.success) return toast('Database error: ' + data.message, 'error');
+      
+      toast('Aspirant completely deleted.', 'success');
+      loadAllData(); 
+    }
+  });
+}
+
+  function normalizeImageUrl(raw) {
+  if (!raw) return '';
+  raw = String(raw).trim();
+  if (!raw) return '';
+
+  // Already a CDN URL
+  if (raw.includes('cdn.jsdelivr.net/gh/') || raw.includes('lh3.googleusercontent.com/d/')) return raw;
+
+  // GitHub blob URL → jsDelivr CDN
+  var m = raw.match(/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
+  if (m) return 'https://cdn.jsdelivr.net/gh/' + m[1] + '/' + m[2] + '@' + m[3] + '/' + m[4];
+
+  // Raw GitHub URL → jsDelivr CDN
+  m = raw.match(/raw\.githubusercontent\.com\/([^\/]+)\/([^\/]+)\/([^\/]+)\/(.+)$/);
+  if (m) return 'https://cdn.jsdelivr.net/gh/' + m[1] + '/' + m[2] + '@' + m[3] + '/' + m[4];
+
+  // Google Drive Links
+  m = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1];
+  m = raw.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1];
+  m = raw.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1];
+
+  // Any other direct http/https URL
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+
+  // Bare Drive ID
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(raw)) return 'https://lh3.googleusercontent.com/d/' + raw;
+
+  return '';
+}
+</script>
+</body>
+</html>
