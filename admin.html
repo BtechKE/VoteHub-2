@@ -2066,6 +2066,9 @@ body::after {
     <button class="tab" data-tab="tracker" onclick="switchTab('tracker')">
       <i class="fas fa-satellite-dish"></i> Live Tracker <span class="badge" id="badgeTracker">0</span>
     </button>
+    <button class="tab" data-tab="locations" onclick="switchTab('locations')">
+      <i class="fas fa-map"></i> Locations
+    </button>
     <button class="tab" data-tab="wards" onclick="switchTab('wards')">
       <i class="fas fa-map-signs"></i> Wards <span class="badge" id="badgeWards">0</span>
     </button>
@@ -2148,7 +2151,24 @@ body::after {
       <div id="trackerList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
     </div>
   </div>
-
+  <!-- ============================================================
+       LOCATIONS (Counties & Constituencies)
+  ============================================================ -->
+  <div class="section" id="sec-locations">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title"><i class="fas fa-map"></i> Counties & Constituencies</div>
+          <div class="section-desc">Manage the geographic hierarchy for your clients</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="openCountyModal()"><i class="fas fa-plus"></i> Add County</button>
+          <button class="btn btn-primary btn-sm" onclick="openConstituencyModal()"><i class="fas fa-plus"></i> Add Constituency</button>
+        </div>
+      </div>
+      <div id="locationsList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
+    </div>
+  </div>
   <!-- ============================================================
        WARDS
   ============================================================ -->
@@ -2392,6 +2412,7 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 //  STATE
 // ================================================================
+var COUNTIES = [], CONSTITUENCIES = [];
 var WARDS = [], CENTRES = [], STREAMS = [], CANDIDATES = [], AGENTS = [], ASPIRANTS = [];
 var CONFIG = {};
 var countdownTimer = null;
@@ -2516,6 +2537,7 @@ function switchTab(name) {
 
   if (name === 'results') { MCA_SUMMARY = null; loadAdminResults(); }
   if (name === 'tracker') { loadSubmissionMatrix(); }
+  if (name === 'locations') { renderLocations(); }
 }
 
 // ================================================================
@@ -2675,11 +2697,52 @@ function openActiveUsers() {
 //  DATA LOADERS
 // ================================================================
 async function loadAllData() {
-  await Promise.all([loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
+  await Promise.all([loadCounties(), loadConstituencies(), loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
   loadAdminResults();
   loadSubmissionMatrix();
+  renderLocations();
 }
 
+  async function loadCounties() {
+  const { data } = await db.from('counties').select('*').order('name');
+  COUNTIES = data || [];
+}
+async function loadConstituencies() {
+  const { data } = await db.from('constituencies').select('*').order('name');
+  CONSTITUENCIES = data || [];
+}
+
+ function renderLocations() {
+  var el = document.getElementById('locationsList');
+  if (!COUNTIES.length) {
+    el.innerHTML = emptyHTML('No counties yet', 'Add a county to get started.');
+    return;
+  }
+  var html = '';
+  COUNTIES.forEach(c => {
+    var consts = CONSTITUENCIES.filter(x => x.county_id === c.id);
+    html += `<div style="margin-bottom:20px; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--bg);">`;
+    
+    // County Header
+    html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px dashed var(--border); padding-bottom:10px;">`;
+    html += `<h3 style="font-size:16px; font-weight:700;"><i class="fas fa-building" style="color:var(--primary-dark); margin-right:8px;"></i>${esc(c.name)} County</h3>`;
+    html += `<button class="btn btn-sm btn-ghost" onclick="deleteCounty('${c.id}')" style="color:var(--danger); border-color:transparent;"><i class="fas fa-trash"></i> Delete County</button>`;
+    html += `</div>`;
+    
+    // Constituencies List
+    if (consts.length === 0) {
+      html += `<div style="font-size:12px; color:var(--text-muted); font-style:italic;">No constituencies added yet.</div>`;
+    } else {
+      html += `<div class="item-list">`;
+      consts.forEach(x => {
+        html += `<span class="item"><span class="item-name">${esc(x.name)}</span><span class="item-actions"><button class="danger" onclick="deleteConstituency('${x.id}')"><i class="fas fa-trash"></i></button></span></span>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+  el.innerHTML = html;
+} 
 async function loadWards() {
   const { data } = await db.from('wards').select('*').order('name');
   WARDS = data || []; renderWards(); document.getElementById('statWards').textContent = WARDS.length; document.getElementById('badgeWards').textContent = WARDS.length;
@@ -2711,7 +2774,8 @@ async function loadAspirants() {
 function renderWards() {
   var el = document.getElementById('wardsList');
   if (!WARDS.length) { el.innerHTML = emptyHTML('No wards yet', 'Add your first ward.'); return; }
-  el.innerHTML = '<div class="item-list">' + WARDS.map(w => `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+  var constMap = {}; CONSTITUENCIES.forEach(c => constMap[c.id] = c.name);
+  el.innerHTML = '<div class="item-list">' + WARDS.map(w => `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
 }
 
 function renderCentres() {
@@ -2774,13 +2838,29 @@ function modalHead(title, sub) { return `<div class="modal-head"><div><div class
 // ================================================================
 //  WARDS CRUD
 // ================================================================
-function openWardModal() { openModal(modalHead('Add Ward') + `<div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>`); }
-function editWard(id, name) { openModal(modalHead('Edit Ward', id) + `<div class="form-group"><label>Ward Name</label><input id="m_wardName" value="${escAttr(name)}"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard('${esc(id)}')">Save</button></div>`); }
+function openWardModal() {
+  if (!CONSTITUENCIES.length) return toast('Add a constituency first.', 'error');
+  var opts = CONSTITUENCIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Add Ward') + 
+    `<div class="form-group"><label>Constituency</label><select id="m_wardConst">${opts}</select></div>
+     <div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>`);
+}
+
+function editWard(id, name, constituency_id) {
+  if (!CONSTITUENCIES.length) return toast('Add a constituency first.', 'error');
+  var opts = CONSTITUENCIES.map(c => `<option value="${c.id}" ${c.id === constituency_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Edit Ward', id) + 
+    `<div class="form-group"><label>Constituency</label><select id="m_wardConst">${opts}</select></div>
+     <div class="form-group"><label>Ward Name</label><input id="m_wardName" value="${escAttr(name)}"></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard('${esc(id)}')">Save</button></div>`);
+}
 async function saveWard(id) {
   var name = document.getElementById('m_wardName').value.trim();
+  var constituency_id = document.getElementById('m_wardConst').value;
   if (!name) return toast('Enter a name.', 'error');
-  if (id) await db.from('wards').update({ name }).eq('id', id);
-  else await db.from('wards').insert({ name });
+  if (id) await db.from('wards').update({ name, constituency_id }).eq('id', id);
+  else await db.from('wards').insert({ name, constituency_id });
   toast('Saved.', 'success'); closeModal(); loadAllData();
 }
 function deleteWard(id) {
@@ -3997,7 +4077,47 @@ function deleteAspirant(id) {
     }
   });
 }
+// --- COUNTIES CRUD ---
+function openCountyModal() {
+  openModal(modalHead('Add County') + 
+    `<div class="form-group"><label>County Name</label><input id="m_countyName" placeholder="e.g. Nairobi"></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCounty()">Save</button></div>`);
+}
+async function saveCounty() {
+  var name = document.getElementById('m_countyName').value.trim();
+  if (!name) return toast('Enter a county name.', 'error');
+  const { error } = await db.from('counties').insert({ name });
+  if (error) return toast('Failed: ' + error.message, 'error');
+  toast('County added.', 'success'); closeModal(); loadAllData();
+}
+async function deleteCounty(id) {
+  thConfirm({ title: 'Delete county?', message: 'All constituencies and wards under it will be deleted.', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('counties').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
 
+// --- CONSTITUENCIES CRUD ---
+function openConstituencyModal() {
+  if (!COUNTIES.length) return toast('Add a county first.', 'error');
+  var opts = COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Add Constituency') + 
+    `<div class="form-group"><label>County</label><select id="m_constCounty">${opts}</select></div>
+     <div class="form-group"><label>Constituency Name</label><input id="m_constName" placeholder="e.g. Westlands"></div>
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveConstituency()">Save</button></div>`);
+}
+async function saveConstituency() {
+  var county_id = document.getElementById('m_constCounty').value;
+  var name = document.getElementById('m_constName').value.trim();
+  if (!name) return toast('Enter a constituency name.', 'error');
+  const { error } = await db.from('constituencies').insert({ county_id, name });
+  if (error) return toast('Failed: ' + error.message, 'error');
+  toast('Constituency added.', 'success'); closeModal(); loadAllData();
+}
+async function deleteConstituency(id) {
+  thConfirm({ title: 'Delete constituency?', message: 'All wards under it will be deleted.', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
+    if (ok) { await db.from('constituencies').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
+  });
+}
   function normalizeImageUrl(raw) {
   if (!raw) return '';
   raw = String(raw).trim();
