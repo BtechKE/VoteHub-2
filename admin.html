@@ -3255,8 +3255,14 @@ function openAspirantModal() {
 }
 function aspPosChanged() { 
   var pos = document.getElementById('m_aspPosition').value;
+  
+  // President, Governor, Senator, and Women Rep are County-wide
   var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
+  
+  // MP is Constituency-wide
   var isConst = (pos === 'MP');
+  
+  // MCA is Ward-specific
   var isWard = (pos === 'MCA');
   
   document.getElementById('m_aspCountyWrap').style.display = isCounty ? 'block' : 'none';
@@ -3352,7 +3358,6 @@ function editAspirant(id) {
   `);
   aspPosChanged();
 }
-
 // ================================================================
 //  ADMIN — RESULTS TAB (ward-aware MCA)
 // ================================================================
