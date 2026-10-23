@@ -2894,9 +2894,27 @@ function editCentre(id) {
 async function saveCentre(id) {
   var name = document.getElementById('m_centreName').value.trim();
   if (!name) return toast('Enter a name.', 'error');
-  if (id) await db.from('centres').update({ name }).eq('id', id);
-  else { var wardId = document.getElementById('m_centreWard').value; await db.from('centres').insert({ name, ward_id: wardId }); }
-  toast('Saved.', 'success'); closeModal(); loadAllData();
+  
+  var res;
+  if (id) {
+    // Edit existing centre
+    res = await db.from('centres').update({ name }).eq('id', id);
+  } else { 
+    // Create new centre
+    var wardId = document.getElementById('m_centreWard').value; 
+    var newId = 'C' + Math.random().toString(36).substring(2, 6).toUpperCase(); // Generates like C-8A2F
+    
+    res = await db.from('centres').insert({ id: newId, name: name, ward_id: wardId }); 
+  }
+  
+  // Check for database errors before showing success
+  if (res.error) {
+    return toast('Database error: ' + res.error.message, 'error');
+  }
+  
+  toast('Centre saved.', 'success'); 
+  closeModal(); 
+  loadAllData();
 }
 function deleteCentre(id) {
   thConfirm({ title: 'Delete centre?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
