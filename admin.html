@@ -2934,11 +2934,103 @@ function editCentre(id) {
 }
 
 function deleteCentre(id) {
-  thConfirm({ title: 'Delete centre?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
-    if (ok) { await db.from('centres').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
+  thConfirm({
+    title: 'Delete centre?',
+    message: 'This will also delete <strong>all streams and results</strong> under this centre. This cannot be undone.',
+    confirmText: 'Delete',
+    tone: 'danger'
+  }).then(async ok => {
+    if (!ok) return;
+
+    try {
+      // 1. Get this centre's stream codes
+      const { data: streamRows, error: fetchErr } = await db.from('streams').select('code').eq('centre_id', id);
+      if (fetchErr) throw new Error('Fetch streams: ' + fetchErr.message);
+
+      var streamCodes = (streamRows || []).map(s => s.code);
+
+      // 2. Delete results for those streams (child of child)
+      if (streamCodes.length) {
+        const { error: resErr } = await db.from('results').delete().in('stream_code', streamCodes);
+        if (resErr) throw new Error('Results: ' + resErr.message);
+      }
+
+      // 3. Delete streams
+      const { error: streamErr } = await db.from('streams').delete().eq('centre_id', id);
+      if (streamErr) throw new Error('Streams: ' + streamErr.message);
+
+      // 4. Delete the centre
+      const { error: centreErr } = await db.from('centres').delete().eq('id', id);
+      if (centreErr) throw new Error('Centre: ' + centreErr.message);
+
+      toast('Centre deleted.', 'success');
+      loadAllData();
+
+    } catch (err) {
+      console.error(err);
+      toast(err.message, 'error');
+    }
   });
 }
+function deleteWard(id) {
+  thConfirm({
+    title: 'Delete ward?',
+    message: 'This will delete <strong>all centres, streams, results, and MCA candidates</strong> under this ward. This cannot be undone.',
+    confirmText: 'Delete',
+    tone: 'danger'
+  }).then(async ok => {
+    if (!ok) return;
 
+    try {
+      // 1. Get all centres in this ward
+      const { data: centreRows, error: cErr } = await db.from('centres').select('id').eq('ward_id', id);
+      if (cErr) throw new Error('Fetch centres: ' + cErr.message);
+
+      var centreIds = (centreRows || []).map(c => c.id);
+
+      // 2. Get all streams in those centres
+      var streamCodes = [];
+      if (centreIds.length) {
+        const { data: streamRows, error: sErr } = await db.from('streams').select('code').in('centre_id', centreIds);
+        if (sErr) throw new Error('Fetch streams: ' + sErr.message);
+        streamCodes = (streamRows || []).map(s => s.code);
+      }
+
+      // 3. Delete results for those streams
+      if (streamCodes.length) {
+        const { error: rErr } = await db.from('results').delete().in('stream_code', streamCodes);
+        if (rErr) throw new Error('Results: ' + rErr.message);
+      }
+
+      // 4. Delete streams
+      if (centreIds.length) {
+        const { error: stErr } = await db.from('streams').delete().in('centre_id', centreIds);
+        if (stErr) throw new Error('Streams: ' + stErr.message);
+      }
+
+      // 5. Delete centres
+      if (centreIds.length) {
+        const { error: ceErr } = await db.from('centres').delete().in('id', centreIds);
+        if (ceErr) throw new Error('Centres: ' + ceErr.message);
+      }
+
+      // 6. Delete MCA candidates for this ward (results already gone above)
+      const { error: candErr } = await db.from('candidates').delete().eq('ward_id', id);
+      if (candErr) throw new Error('Candidates: ' + candErr.message);
+
+      // 7. Delete the ward
+      const { error: wErr } = await db.from('wards').delete().eq('id', id);
+      if (wErr) throw new Error('Ward: ' + wErr.message);
+
+      toast('Ward deleted.', 'success');
+      loadAllData();
+
+    } catch (err) {
+      console.error(err);
+      toast(err.message, 'error');
+    }
+  });
+        }
 // ================================================================
 //  STREAMS
 // ================================================================
