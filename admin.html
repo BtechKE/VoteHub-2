@@ -3137,6 +3137,8 @@ function deleteCandidate(code) {
 //  AGENTS & ASPIRANTS (Using RPC)
 // ================================================================
 function openAgentModal() {
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  
   var streamOpts = STREAMS.map(function(s) {
     return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">' +
       '<input type="checkbox" class="agent-stream-cb" value="' + escAttr(s.code) + '" style="width:auto; margin:0;">' +
@@ -3144,6 +3146,7 @@ function openAgentModal() {
   }).join('');
 
   openModal(modalHead('Add Agent') + `
+    <div class="form-group"><label>County</label><select id="m_agentCounty">${countyOpts}</select></div>
     <div class="form-group"><label>Name</label><input id="m_agentName"></div>
     <div class="form-group"><label>Phone</label><input id="m_agentPhone"></div>
     <div class="form-group"><label>Assign Streams</label>
@@ -3156,10 +3159,12 @@ function openAgentModal() {
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent()">Save</button></div>
   `);
 }
-  function editAgent(id) {
+ function editAgent(id) {
   var a = AGENTS.find(x => x.id === id); if (!a) return;
   
-  // Ensure we parse the array correctly (handles both text[] and comma-separated strings)
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}" ${c.id===a.county_id?'selected':''}>${esc(c.name)}</option>`).join('');
+  
+  // Ensure we parse the array correctly
   var assigned = Array.isArray(a.assigned_streams) 
     ? a.assigned_streams 
     : String(a.assigned_streams || '').split(',').map(s => s.trim());
@@ -3172,6 +3177,7 @@ function openAgentModal() {
   }).join('');
 
   openModal(modalHead('Edit Agent', id) + `
+    <div class="form-group"><label>County</label><select id="m_agentCounty">${countyOpts}</select></div>
     <div class="form-group"><label>Name</label><input id="m_agentName" value="${escAttr(a.name)}"></div>
     <div class="form-group"><label>Phone</label><input id="m_agentPhone" value="${escAttr(a.phone||'')}"></div>
     <div class="form-group"><label>Assign Streams</label>
@@ -3181,13 +3187,15 @@ function openAgentModal() {
     </div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent('${esc(id)}')">Save</button></div>
   `);
-}
+} 
 async function saveAgent(id) {
   var name = document.getElementById('m_agentName').value.trim();
   var phone = document.getElementById('m_agentPhone').value.trim();
+  var county_id = document.getElementById('m_agentCounty').value;
   var streams = [].slice.call(document.querySelectorAll('.agent-stream-cb:checked')).map(cb => cb.value);
 
   if (!name) return toast('Enter agent name.', 'error');
+  if (!county_id) return toast('Please select a County.', 'error');
   if (!streams || streams.length === 0) return toast('Assign at least one stream.', 'error');
 
   if (id) {
@@ -3196,16 +3204,12 @@ async function saveAgent(id) {
       const { data, error } = await db.from('agents').update({
         name: name,
         phone: phone,
-        assigned_streams: streams
-      }).eq('id', id).select(); // <--- .select() forces Supabase to return the updated data
+        assigned_streams: streams,
+        county_id: county_id
+      }).eq('id', id).select();
 
-      if (error) {
-        console.error(error);
-        return toast('Database Error: ' + error.message, 'error');
-      }
-      if (!data || data.length === 0) {
-        return toast('Update failed. RLS policy might be blocking you.', 'error');
-      }
+      if (error) throw error;
+      if (!data || data.length === 0) return toast('Update failed. RLS might be blocking.', 'error');
 
       toast('Agent updated.', 'success');
       closeModal();
@@ -3221,8 +3225,14 @@ async function saveAgent(id) {
     
     if (!email || !pw) return toast('Email and password are required.', 'error');
 
+    // Call the V2 RPC
     const { data, error } = await db.rpc('admin_create_agent', { 
-      p_email: email, p_password: pw, p_name: name, p_phone: phone, p_streams: streams 
+      p_email: email, 
+      p_password: pw, 
+      p_name: name, 
+      p_phone: phone, 
+      p_streams: streams,
+      p_county_id: county_id
     });
     
     if (error || !data.success) return toast(error?.message || 'Failed to create agent.', 'error');
