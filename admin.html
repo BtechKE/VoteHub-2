@@ -2841,14 +2841,39 @@ function modalHead(title, sub) { return `<div class="modal-head"><div><div class
 //  WARDS CRUD
 // ================================================================
 function openWardModal() {
-  if (!CONSTITUENCIES.length) return toast('Add a constituency first.', 'error');
-  var opts = CONSTITUENCIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  openModal(modalHead('Add Ward') + 
-    `<div class="form-group"><label>Constituency</label><select id="m_wardConst">${opts}</select></div>
-     <div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div>
-     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>`);
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Add Ward') + `
+    <div class="form-group"><label>County</label><select id="m_wardCounty" onchange="filterWardConst()">${countyOpts}</select></div>
+    <div class="form-group"><label>Constituency</label><select id="m_wardConst"><option value="">— Select Constituency —</option></select></div>
+    <div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>
+  `);
 }
 
+function filterWardConst() {
+  var countyId = document.getElementById('m_wardCounty').value;
+  var consts = CONSTITUENCIES.filter(c => c.county_id === countyId);
+  document.getElementById('m_wardConst').innerHTML = '<option value="">— Select Constituency —</option>' + consts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
+async function saveWard(id) {
+  var name = document.getElementById('m_wardName').value.trim();
+  var constituency_id = document.getElementById('m_wardConst').value;
+  
+  if (!name) return toast('Enter a name.', 'error');
+  if (!constituency_id) return toast('Please select a constituency.', 'error');
+  
+  var res;
+  if (id) {
+    res = await db.from('wards').update({ name, constituency_id }).eq('id', id);
+  } else {
+    var newId = 'W-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+    res = await db.from('wards').insert({ id: newId, name, constituency_id });
+  }
+  
+  if (res.error) return toast('Error: ' + res.error.message, 'error');
+  toast('Saved.', 'success'); closeModal(); loadAllData();
+}
 function editWard(id, name, constituency_id) {
   if (!CONSTITUENCIES.length) return toast('Add a constituency first.', 'error');
   var opts = CONSTITUENCIES.map(c => `<option value="${c.id}" ${c.id === constituency_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -2857,65 +2882,57 @@ function editWard(id, name, constituency_id) {
      <div class="form-group"><label>Ward Name</label><input id="m_wardName" value="${escAttr(name)}"></div>
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard('${esc(id)}')">Save</button></div>`);
 }
-async function saveWard(id) {
-  var name = document.getElementById('m_wardName').value.trim();
-  var constituency_id = document.getElementById('m_wardConst').value;
-  if (!name) return toast('Enter a name.', 'error');
-  
-  if (id) {
-    await db.from('wards').update({ name, constituency_id }).eq('id', id);
-  } else {
-    // Generate a unique ID like W-K9L2M
-    var newId = 'W-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-    await db.from('wards').insert({ id: newId, name, constituency_id });
-  }
-  
-  toast('Saved.', 'success'); closeModal(); loadAllData();
-}
-function deleteWard(id) {
-  thConfirm({ title: 'Delete ward?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
-    if (ok) { await db.from('wards').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
-  });
-}
-
 // ================================================================
 //  CENTRES CRUD
 // ================================================================
 function openCentreModal() {
-  if (!WARDS.length) return toast('Add a ward first.', 'error');
-  var opts = WARDS.map(w => `<option value="${escAttr(w.id)}">${esc(w.name)}</option>`).join('');
-  openModal(modalHead('Add Centre') + `<div class="form-group"><label>Ward</label><select id="m_centreWard">${opts}</select></div><div class="form-group"><label>Centre Name</label><input id="m_centreName"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre()">Save</button></div>`);
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Add Centre') + `
+    <div class="form-group"><label>County</label><select id="m_centreCounty" onchange="filterCentreConst()">${countyOpts}</select></div>
+    <div class="form-group"><label>Constituency</label><select id="m_centreConst" onchange="filterCentreWard()"><option value="">— Select Constituency —</option></select></div>
+    <div class="form-group"><label>Ward</label><select id="m_centreWard"><option value="">— Select Ward —</option></select></div>
+    <div class="form-group"><label>Centre Name</label><input id="m_centreName"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre()">Save</button></div>
+  `);
+}
+
+function filterCentreConst() {
+  var countyId = document.getElementById('m_centreCounty').value;
+  var consts = CONSTITUENCIES.filter(c => c.county_id === countyId);
+  document.getElementById('m_centreConst').innerHTML = '<option value="">— Select Constituency —</option>' + consts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('m_centreWard').innerHTML = '<option value="">— Select Ward —</option>';
+}
+
+function filterCentreWard() {
+  var constId = document.getElementById('m_centreConst').value;
+  var wards = WARDS.filter(w => w.constituency_id === constId);
+  document.getElementById('m_centreWard').innerHTML = '<option value="">— Select Ward —</option>' + wards.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+}
+
+async function saveCentre(id) {
+  var name = document.getElementById('m_centreName').value.trim();
+  var ward_id = document.getElementById('m_centreWard').value;
+  
+  if (!name) return toast('Enter a name.', 'error');
+  if (!ward_id) return toast('Please select a ward.', 'error');
+  
+  var res;
+  if (id) {
+    res = await db.from('centres').update({ name }).eq('id', id);
+  } else { 
+    var newId = 'C-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+    res = await db.from('centres').insert({ id: newId, name: name, ward_id: ward_id }); 
+  }
+  
+  if (res.error) return toast('Database error: ' + res.error.message, 'error');
+  toast('Centre saved.', 'success'); closeModal(); loadAllData();
 }
 function editCentre(id) {
   var c = CENTRES.find(x => x.id === id); if (!c) return;
   var opts = WARDS.map(w => `<option value="${escAttr(w.id)}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
   openModal(modalHead('Edit Centre', id) + `<div class="form-group"><label>Ward</label><select id="m_centreWard" disabled>${opts}</select></div><div class="form-group"><label>Centre Name</label><input id="m_centreName" value="${escAttr(c.name)}"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre('${esc(id)}')">Save</button></div>`);
 }
-async function saveCentre(id) {
-  var name = document.getElementById('m_centreName').value.trim();
-  if (!name) return toast('Enter a name.', 'error');
-  
-  var res;
-  if (id) {
-    // Edit existing centre
-    res = await db.from('centres').update({ name }).eq('id', id);
-  } else { 
-    // Create new centre
-    var wardId = document.getElementById('m_centreWard').value; 
-    var newId = 'C' + Math.random().toString(36).substring(2, 6).toUpperCase(); // Generates like C-8A2F
-    
-    res = await db.from('centres').insert({ id: newId, name: name, ward_id: wardId }); 
-  }
-  
-  // Check for database errors before showing success
-  if (res.error) {
-    return toast('Database error: ' + res.error.message, 'error');
-  }
-  
-  toast('Centre saved.', 'success'); 
-  closeModal(); 
-  loadAllData();
-}
+
 function deleteCentre(id) {
   thConfirm({ title: 'Delete centre?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
     if (ok) { await db.from('centres').delete().eq('id', id); toast('Deleted.', 'success'); loadAllData(); }
@@ -2926,28 +2943,53 @@ function deleteCentre(id) {
 //  STREAMS
 // ================================================================
 function openStreamModal() {
-  if (!CENTRES.length) return toast('Add a centre first.', 'error');
-  var opts = CENTRES.map(c => `<option value="${escAttr(c.id)}">${esc(c.name)}</option>`).join('');
-  openModal(modalHead('Generate Streams') + `<div class="form-group"><label>Centre</label><select id="m_streamCentre">${opts}</select></div><div class="form-group"><label>Number of streams</label><input id="m_streamCount" type="number" min="1" max="50" value="8"></div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveStreams()">Generate</button></div>`);
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal(modalHead('Generate Streams') + `
+    <div class="form-group"><label>County</label><select id="m_streamCounty" onchange="filterStreamConst()">${countyOpts}</select></div>
+    <div class="form-group"><label>Constituency</label><select id="m_streamConst" onchange="filterStreamWard()"><option value="">— Select Constituency —</option></select></div>
+    <div class="form-group"><label>Ward</label><select id="m_streamWard" onchange="filterStreamCentre()"><option value="">— Select Ward —</option></select></div>
+    <div class="form-group"><label>Centre</label><select id="m_streamCentre"><option value="">— Select Centre —</option></select></div>
+    <div class="form-group"><label>Number of streams</label><input id="m_streamCount" type="number" min="1" max="50" value="8"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveStreams()">Generate</button></div>
+  `);
 }
+
+function filterStreamConst() {
+  var countyId = document.getElementById('m_streamCounty').value;
+  var consts = CONSTITUENCIES.filter(c => c.county_id === countyId);
+  document.getElementById('m_streamConst').innerHTML = '<option value="">— Select Constituency —</option>' + consts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('m_streamWard').innerHTML = '<option value="">— Select Ward —</option>';
+  document.getElementById('m_streamCentre').innerHTML = '<option value="">— Select Centre —</option>';
+}
+
+function filterStreamWard() {
+  var constId = document.getElementById('m_streamConst').value;
+  var wards = WARDS.filter(w => w.constituency_id === constId);
+  document.getElementById('m_streamWard').innerHTML = '<option value="">— Select Ward —</option>' + wards.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  document.getElementById('m_streamCentre').innerHTML = '<option value="">— Select Centre —</option>';
+}
+
+function filterStreamCentre() {
+  var wardId = document.getElementById('m_streamWard').value;
+  var centres = CENTRES.filter(c => c.ward_id === wardId);
+  document.getElementById('m_streamCentre').innerHTML = '<option value="">— Select Centre —</option>' + centres.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+}
+
 async function saveStreams() {
   var centreId = document.getElementById('m_streamCentre').value;
   var count = parseInt(document.getElementById('m_streamCount').value, 10);
-  if (!centreId || !count || count < 1) return toast('Invalid count.', 'error');
   
-  // 1. Find the Centre to get its Ward
+  if (!centreId || !count || count < 1) return toast('Select a centre and enter a valid count.', 'error');
+  
   var centre = CENTRES.find(c => c.id === centreId);
   if (!centre) return toast('Centre not found.', 'error');
   
-  // 2. Find the Ward to get its Constituency
   var ward = WARDS.find(w => w.id === centre.ward_id);
-  if (!ward) return toast('Ward not found for this centre.', 'error');
+  if (!ward) return toast('Ward not found.', 'error');
   
-  // 3. Find the Constituency to get its County
   var constObj = CONSTITUENCIES.find(c => c.id === ward.constituency_id);
-  if (!constObj) return toast('Constituency not found for this ward.', 'error');
-
-  // 4. Call the V2 RPC with the full hierarchy
+  if (!constObj) return toast('Constituency not found.', 'error');
+  
   const { error } = await db.rpc('admin_generate_streams', { 
     p_centre_id: centreId, 
     p_count: count, 
@@ -2957,10 +2999,7 @@ async function saveStreams() {
   });
   
   if (error) return toast('Failed: ' + error.message, 'error');
-  
-  toast('Streams generated.', 'success'); 
-  closeModal(); 
-  loadAllData();
+  toast('Streams generated.', 'success'); closeModal(); loadAllData();
 }
 function deleteStream(code) {
   thConfirm({ title: 'Delete stream?', confirmText: 'Delete', tone: 'danger' }).then(async ok => {
