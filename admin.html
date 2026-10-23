@@ -1670,15 +1670,20 @@ body::after {
 }
 
 /* ================================================================
-   ADMIN — SOFT GREEN CANVAS
+   ADMIN — IEBC GREEN CANVAS
 ============================================================ */
 
 body {
-  background: #ECFAE5;
+  background: #8CC63F;
   background-image:
-    radial-gradient(circle at 100% 0%, rgba(165, 207, 131, 0.20) 0%, transparent 55%),
-    radial-gradient(circle at 0% 100%, rgba(165, 207, 131, 0.14) 0%, transparent 55%);
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.15) 0%, transparent 55%),
+    radial-gradient(circle at 0% 100%, rgba(27, 33, 26, 0.10) 0%, transparent 55%);
   background-attachment: fixed;
+}
+
+/* Optional: Slightly darken the topbar gradient to match */
+.topbar {
+  background: linear-gradient(to bottom, #FFFFFF 0%, #F4F9ED 100%) !important;
 }
 
 /* The existing body::before / ::after halos were tuned for the old
