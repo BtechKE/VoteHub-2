@@ -2415,6 +2415,7 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 var COUNTIES = [], CONSTITUENCIES = [];
 var WARDS = [], CENTRES = [], STREAMS = [], CANDIDATES = [], AGENTS = [], ASPIRANTS = [];
+var agentSelectedStreams = [];
 var CONFIG = {};
 var countdownTimer = null;
 var POSITIONS = ['President', 'Governor', 'Senator', 'MP', 'Women Rep', 'MCA'];
@@ -3136,70 +3137,189 @@ function deleteCandidate(code) {
 // ================================================================
 //  AGENTS & ASPIRANTS (Using RPC)
 // ================================================================
+  function filterAgentConst() {
+  var county = document.getElementById('m_agentCounty').value;
+  var constSel = document.getElementById('m_agentConst');
+  var wardSel = document.getElementById('m_agentWard');
+  var centreSel = document.getElementById('m_agentCentre');
+  
+  var consts = CONSTITUENCIES.filter(c => c.county_id === county);
+  constSel.innerHTML = '<option value="">— Select Constituency —</option>' + consts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  
+  wardSel.innerHTML = '<option value="">— Select Ward —</option>';
+  centreSel.innerHTML = '<option value="">— Select Centre —</option>';
+  document.getElementById('m_agentStreamList').innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>';
+}
+
+function filterAgentWard() {
+  var constId = document.getElementById('m_agentConst').value;
+  var wardSel = document.getElementById('m_agentWard');
+  var centreSel = document.getElementById('m_agentCentre');
+  
+  var wards = WARDS.filter(w => w.constituency_id === constId);
+  wardSel.innerHTML = '<option value="">— Select Ward —</option>' + wards.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+  
+  centreSel.innerHTML = '<option value="">— Select Centre —</option>';
+  document.getElementById('m_agentStreamList').innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>';
+}
+
+function filterAgentCentre() {
+  var wardId = document.getElementById('m_agentWard').value;
+  var centreSel = document.getElementById('m_agentCentre');
+  
+  var centres = CENTRES.filter(c => c.ward_id === wardId);
+  centreSel.innerHTML = '<option value="">— Select Centre —</option>' + centres.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  
+  document.getElementById('m_agentStreamList').innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>';
+}
+
+function renderAgentStreams() {
+  var centreId = document.getElementById('m_agentCentre').value;
+  var el = document.getElementById('m_agentStreamList');
+  if (!centreId) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>';
+    return;
+  }
+  
+  var centreStreams = STREAMS.filter(s => s.centre_id === centreId).sort((a,b) => a.stream_number - b.stream_number);
+  if (!centreStreams.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">No streams generated for this centre yet.</div>';
+    return;
+  }
+  
+  el.innerHTML = centreStreams.map(s => {
+    var isChecked = agentSelectedStreams.includes(s.code) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">
+      <input type="checkbox" class="agent-stream-cb" value="${escAttr(s.code)}" ${isChecked} style="width:auto; margin:0;" onchange="toggleAgentStream('${escAttr(s.code)}', this.checked)">
+      <span>STR ${String(s.stream_number).padStart(2, '0')} (${esc(s.code)})</span>
+    </label>`;
+  }).join('');
+}
+
+function toggleAgentStream(code, isChecked) {
+  // 1. Update the global array of selected streams
+  if (isChecked) {
+    if (!agentSelectedStreams.includes(code)) {
+      agentSelectedStreams.push(code);
+    }
+  } else {
+    agentSelectedStreams = agentSelectedStreams.filter(c => c !== code);
+  }
+  
+  // 2. Update the counter text on the screen
+  var countEl = document.getElementById('m_agentSelectedCount');
+  if (countEl) {
+    countEl.textContent = agentSelectedStreams.length;
+  }
+}
 function openAgentModal() {
+  agentSelectedStreams = []; // Reset selection
   var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   
-  var streamOpts = STREAMS.map(function(s) {
-    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">' +
-      '<input type="checkbox" class="agent-stream-cb" value="' + escAttr(s.code) + '" style="width:auto; margin:0;">' +
-      '<span>' + esc(s.code) + '</span></label>';
-  }).join('');
-
   openModal(modalHead('Add Agent') + `
-    <div class="form-group"><label>County</label><select id="m_agentCounty">${countyOpts}</select></div>
     <div class="form-group"><label>Name</label><input id="m_agentName"></div>
     <div class="form-group"><label>Phone</label><input id="m_agentPhone"></div>
-    <div class="form-group"><label>Assign Streams</label>
-      <div style="max-height:180px;overflow-y:auto;padding:8px 12px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);">
-        ${streamOpts || '<div style="color:var(--text-faint);font-size:12.5px;">No streams available — generate them first.</div>'}
-      </div>
-    </div>
     <div class="form-group"><label>Email (for login)</label><input id="m_agentEmail" type="email"></div>
     <div class="form-group"><label>Password</label><input id="m_agentPass" type="password"></div>
+    
+    <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
+      <label style="font-size: 14px; font-weight: 800; margin-bottom: 12px; display: block; color: var(--primary-dark);"><i class="fas fa-map-marker-alt"></i> Assign Streams</label>
+      
+      <div class="form-row">
+        <div class="form-group"><label>County</label><select id="m_agentCounty" onchange="filterAgentConst()">${countyOpts}</select></div>
+        <div class="form-group"><label>Constituency</label><select id="m_agentConst" onchange="filterAgentWard()"><option value="">— Select Constituency —</option></select></div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group"><label>Ward</label><select id="m_agentWard" onchange="filterAgentCentre()"><option value="">— Select Ward —</option></select></div>
+        <div class="form-group"><label>Centre</label><select id="m_agentCentre" onchange="renderAgentStreams()"><option value="">— Select Centre —</option></select></div>
+      </div>
+      
+      <div class="form-group" style="margin-top: 10px;">
+        <div style="max-height:200px;overflow-y:auto;padding:10px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);" id="m_agentStreamList">
+          <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>
+        </div>
+        <div style="font-size: 11px; color: var(--primary-dark); font-weight: 600; margin-top: 6px;">Selected: <span id="m_agentSelectedCount">0</span> streams</div>
+      </div>
+    </div>
+
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent()">Save</button></div>
   `);
 }
  function editAgent(id) {
   var a = AGENTS.find(x => x.id === id); if (!a) return;
   
-  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}" ${c.id===a.county_id?'selected':''}>${esc(c.name)}</option>`).join('');
-  
-  // Ensure we parse the array correctly
-  var assigned = Array.isArray(a.assigned_streams) 
-    ? a.assigned_streams 
-    : String(a.assigned_streams || '').split(',').map(s => s.trim());
+  // Load their existing streams
+  agentSelectedStreams = Array.isArray(a.assigned_streams) 
+    ? [...a.assigned_streams] 
+    : String(a.assigned_streams || '').split(',').map(s => s.trim()).filter(Boolean);
 
-  var streamOpts = STREAMS.map(function(s) {
-    var checked = assigned.includes(s.code) ? 'checked' : '';
-    return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0;cursor:pointer;">' +
-      '<input type="checkbox" class="agent-stream-cb" value="' + escAttr(s.code) + '" ' + checked + ' style="width:auto; margin:0;">' +
-      '<span>' + esc(s.code) + '</span></label>';
-  }).join('');
+  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}" ${c.id===a.county_id?'selected':''}>${esc(c.name)}</option>`).join('');
 
   openModal(modalHead('Edit Agent', id) + `
-    <div class="form-group"><label>County</label><select id="m_agentCounty">${countyOpts}</select></div>
     <div class="form-group"><label>Name</label><input id="m_agentName" value="${escAttr(a.name)}"></div>
     <div class="form-group"><label>Phone</label><input id="m_agentPhone" value="${escAttr(a.phone||'')}"></div>
-    <div class="form-group"><label>Assign Streams</label>
-      <div style="max-height:180px;overflow-y:auto;padding:8px 12px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);">
-        ${streamOpts || '<div style="color:var(--text-faint);font-size:12.5px;">No streams available.</div>'}
+    
+    <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
+      <label style="font-size: 14px; font-weight: 800; margin-bottom: 12px; display: block; color: var(--primary-dark);"><i class="fas fa-map-marker-alt"></i> Assigned Streams</label>
+      
+      <div class="form-row">
+        <div class="form-group"><label>County</label><select id="m_agentCounty" onchange="filterAgentConst()">${countyOpts}</select></div>
+        <div class="form-group"><label>Constituency</label><select id="m_agentConst" onchange="filterAgentWard()"><option value="">— Select Constituency —</option></select></div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group"><label>Ward</label><select id="m_agentWard" onchange="filterAgentCentre()"><option value="">— Select Ward —</option></select></div>
+        <div class="form-group"><label>Centre</label><select id="m_agentCentre" onchange="renderAgentStreams()"><option value="">— Select Centre —</option></select></div>
+      </div>
+      
+      <div class="form-group" style="margin-top: 10px;">
+        <div style="max-height:200px;overflow-y:auto;padding:10px;border:1.5px solid var(--border-strong);border-radius:10px;background:var(--bg);" id="m_agentStreamList">
+          <div style="font-size:12px;color:var(--text-muted);text-align:center;padding:10px;">Select a centre to view streams.</div>
+        </div>
+        <div style="font-size: 11px; color: var(--primary-dark); font-weight: 600; margin-top: 6px;">Selected: <span id="m_agentSelectedCount">${agentSelectedStreams.length}</span> streams</div>
       </div>
     </div>
+
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent('${esc(id)}')">Save</button></div>
   `);
-} 
+
+  // Auto-fill the dropdowns based on their existing streams
+  if (agentSelectedStreams.length > 0) {
+    // Find the first stream to determine their primary location
+    var firstStream = STREAMS.find(s => s.code === agentSelectedStreams[0]);
+    if (firstStream) {
+      var centre = CENTRES.find(c => c.id === firstStream.centre_id);
+      if (centre) {
+        var ward = WARDS.find(w => w.id === centre.ward_id);
+        if (ward) {
+          // Trigger the filters to populate Constituency and Ward
+          filterAgentConst(); 
+          document.getElementById('m_agentConst').value = ward.constituency_id;
+          
+          filterAgentWard();
+          document.getElementById('m_agentWard').value = ward.id;
+          
+          filterAgentCentre();
+          document.getElementById('m_agentCentre').value = centre.id;
+          
+          renderAgentStreams(); // Render the streams for this centre
+        }
+      }
+    }
+  }
+}
 async function saveAgent(id) {
   var name = document.getElementById('m_agentName').value.trim();
   var phone = document.getElementById('m_agentPhone').value.trim();
   var county_id = document.getElementById('m_agentCounty').value;
-  var streams = [].slice.call(document.querySelectorAll('.agent-stream-cb:checked')).map(cb => cb.value);
+  var streams = agentSelectedStreams; // Use the global array
 
   if (!name) return toast('Enter agent name.', 'error');
   if (!county_id) return toast('Please select a County.', 'error');
   if (!streams || streams.length === 0) return toast('Assign at least one stream.', 'error');
 
   if (id) {
-    // --- EDITING EXISTING AGENT ---
     try {
       const { data, error } = await db.from('agents').update({
         name: name,
@@ -3209,23 +3329,20 @@ async function saveAgent(id) {
       }).eq('id', id).select();
 
       if (error) throw error;
-      if (!data || data.length === 0) return toast('Update failed. RLS might be blocking.', 'error');
+      if (!data || data.length === 0) return toast('Update failed.', 'error');
 
       toast('Agent updated.', 'success');
       closeModal();
       loadAllData();
     } catch (err) {
       console.error(err);
-      toast('An unexpected error occurred.', 'error');
+      toast('Error: ' + err.message, 'error');
     }
   } else {
-    // --- CREATING NEW AGENT ---
     var email = document.getElementById('m_agentEmail').value.trim();
     var pw = document.getElementById('m_agentPass').value;
-    
-    if (!email || !pw) return toast('Email and password are required.', 'error');
+    if (!email || !pw) return toast('Email and password required.', 'error');
 
-    // Call the V2 RPC
     const { data, error } = await db.rpc('admin_create_agent', { 
       p_email: email, 
       p_password: pw, 
