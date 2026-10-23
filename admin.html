@@ -3013,9 +3013,7 @@ function deleteStream(code) {
 function openCandidateModal() {
   var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
   var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
-  
+
   openModal(modalHead('Add Candidate') + 
     `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
@@ -3028,25 +3026,51 @@ function openCandidateModal() {
          <img id="m_candPhotoPreview" src="" style="width:50px; height:50px; border-radius:50%; object-fit:cover; display:none; border:1px solid #ccc;">
          <input type="file" id="m_candPhotoFile" accept="image/*" style="padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; width:100%;" onchange="previewImage(event)">
        </div>
-       <input type="hidden" id="m_candPhoto" value=""> <!-- Stores the URL -->
+       <input type="hidden" id="m_candPhoto" value="">
      </div>
 
      <div class="form-group"><label>Color <span class="hint">(e.g. #FFC72C)</span></label><input id="m_candColor" placeholder="#A5CF83"></div>
      
-     <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
-     <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
-     <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     <div class="form-group" id="m_candCountyWrap" style="display:none;">
+       <label>County</label>
+       <select id="m_candCounty" onchange="candCountyChanged()">${countyOpts}</select>
+     </div>
+     <div class="form-group" id="m_candConstWrap" style="display:none;">
+       <label>Constituency</label>
+       <select id="m_candConst" onchange="candConstChanged()"><option value="">— Select constituency —</option></select>
+     </div>
+     <div class="form-group" id="m_candWardWrap" style="display:none;">
+       <label>Ward</label>
+       <select id="m_candWard"><option value="">— Select ward —</option></select>
+     </div>
      
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate()">Save</button></div>`);
 }
 function editCandidate(code) {
   var c = CANDIDATES.find(x => x.code === code); if (!c) return;
-  
+
+  // Resolve parent geography (MCA only stores ward_id, MP only stores constituency_id)
+  var preCountyId = c.county_id || '';
+  var preConstId  = c.constituency_id || '';
+  var preWardId   = c.ward_id || '';
+
+  if (c.position === 'MCA' && c.ward_id) {
+    var w = WARDS.find(x => x.id === c.ward_id);
+    if (w) {
+      preConstId = w.constituency_id;
+      var cst = CONSTITUENCIES.find(x => x.id === w.constituency_id);
+      if (cst) preCountyId = cst.county_id;
+    }
+  } else if (c.position === 'MP' && c.constituency_id) {
+    var cst = CONSTITUENCIES.find(x => x.id === c.constituency_id);
+    if (cst) preCountyId = cst.county_id;
+  }
+
   var posOpts = POSITIONS.map(p => `<option value="${p}" ${p===c.position?'selected':''}>${p}</option>`).join('');
-  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(co => `<option value="${co.id}" ${co.id===c.county_id?'selected':''}>${esc(co.name)}</option>`).join('');
-  var constOpts = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.map(co => `<option value="${co.id}" ${co.id===c.constituency_id?'selected':''}>${esc(co.name)}</option>`).join('');
-  var wardOpts = `<option value="">— Select ward —</option>` + WARDS.map(w => `<option value="${w.id}" ${w.id===c.ward_id?'selected':''}>${esc(w.name)}</option>`).join('');
-  
+  var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(co => `<option value="${co.id}" ${co.id===preCountyId?'selected':''}>${esc(co.name)}</option>`).join('');
+  var constOpts  = `<option value="">— Select constituency —</option>` + CONSTITUENCIES.filter(co => co.county_id === preCountyId).map(co => `<option value="${co.id}" ${co.id===preConstId?'selected':''}>${esc(co.name)}</option>`).join('');
+  var wardOpts   = `<option value="">— Select ward —</option>` + WARDS.filter(w => w.constituency_id === preConstId).map(w => `<option value="${w.id}" ${w.id===preWardId?'selected':''}>${esc(w.name)}</option>`).join('');
+
   var currentPhoto = normalizeImageUrl(c.photo_url);
   var previewStyle = currentPhoto ? 'display:block;' : 'display:none;';
 
@@ -3062,14 +3086,23 @@ function editCandidate(code) {
          <img id="m_candPhotoPreview" src="${currentPhoto}" style="width:50px; height:50px; border-radius:50%; object-fit:cover; ${previewStyle} border:1px solid #ccc;">
          <input type="file" id="m_candPhotoFile" accept="image/*" style="padding:10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; width:100%;" onchange="previewImage(event)">
        </div>
-       <input type="hidden" id="m_candPhoto" value="${escAttr(c.photo_url||'')}"> <!-- Stores the old URL -->
+       <input type="hidden" id="m_candPhoto" value="${escAttr(c.photo_url||'')}">
      </div>
 
      <div class="form-group"><label>Color</label><input id="m_candColor" value="${escAttr(c.color||'')}"></div>
      
-     <div class="form-group" id="m_candCountyWrap" style="display:none;"><label>County</label><select id="m_candCounty">${countyOpts}</select></div>
-     <div class="form-group" id="m_candConstWrap" style="display:none;"><label>Constituency</label><select id="m_candConst">${constOpts}</select></div>
-     <div class="form-group" id="m_candWardWrap" style="display:none;"><label>Ward</label><select id="m_candWard">${wardOpts}</select></div>
+     <div class="form-group" id="m_candCountyWrap" style="display:none;">
+       <label>County</label>
+       <select id="m_candCounty" onchange="candCountyChanged()">${countyOpts}</select>
+     </div>
+     <div class="form-group" id="m_candConstWrap" style="display:none;">
+       <label>Constituency</label>
+       <select id="m_candConst" onchange="candConstChanged()">${constOpts}</select>
+     </div>
+     <div class="form-group" id="m_candWardWrap" style="display:none;">
+       <label>Ward</label>
+       <select id="m_candWard">${wardOpts}</select>
+     </div>
      
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
   candPosChanged();
@@ -3085,18 +3118,44 @@ function editCandidate(code) {
   };
   reader.readAsDataURL(file);
 }
-function candPosChanged() { 
+function candPosChanged() {
   var pos = document.getElementById('m_candPosition').value;
   var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
-  var isConst = (pos === 'MP');
-  var isWard = (pos === 'MCA');
-  
-  document.getElementById('m_candCountyWrap').style.display = isCounty ? 'block' : 'none';
-  document.getElementById('m_candConstWrap').style.display = isConst ? 'block' : 'none';
-  document.getElementById('m_candWardWrap').style.display = isWard ? 'block' : 'none';
+  var isConst  = (pos === 'MP');
+  var isWard   = (pos === 'MCA');
+
+  document.getElementById('m_candCountyWrap').style.display = (isCounty || isConst || isWard) ? 'block' : 'none';
+  document.getElementById('m_candConstWrap').style.display  = (isConst || isWard) ? 'block' : 'none';
+  document.getElementById('m_candWardWrap').style.display   = isWard ? 'block' : 'none';
+
+  // Auto-populate the cascade when editing (dropdowns start empty for MP/MCA)
+  var countyEl = document.getElementById('m_candCounty');
+  var constEl  = document.getElementById('m_candConst');
+  if ((isConst || isWard) && countyEl && countyEl.value && constEl.options.length <= 1) {
+    candCountyChanged();
+  }
+  if (isWard && constEl && constEl.value) {
+    var wardEl = document.getElementById('m_candWard');
+    if (wardEl && wardEl.options.length <= 1) candConstChanged();
+  }
+}
+function candCountyChanged() {
+  var countyId = document.getElementById('m_candCounty').value;
+  var consts = CONSTITUENCIES.filter(c => c.county_id === countyId);
+  document.getElementById('m_candConst').innerHTML =
+    '<option value="">— Select constituency —</option>' +
+    consts.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  document.getElementById('m_candWard').innerHTML = '<option value="">— Select ward —</option>';
 }
 
-  async function saveCandidate(oldCode) {
+function candConstChanged() {
+  var constId = document.getElementById('m_candConst').value;
+  var wards = WARDS.filter(w => w.constituency_id === constId);
+  document.getElementById('m_candWard').innerHTML =
+    '<option value="">— Select ward —</option>' +
+    wards.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+}
+ async function saveCandidate(oldCode) {
   var pos = document.getElementById('m_candPosition').value;
   var name = document.getElementById('m_candName').value.trim();
   var party = document.getElementById('m_candParty').value.trim();
@@ -3105,20 +3164,23 @@ function candPosChanged() {
   var photoFile = document.getElementById('m_candPhotoFile').files[0];
   var existingPhotoUrl = document.getElementById('m_candPhoto').value;
 
-  var county = document.getElementById('m_candCounty') ? document.getElementById('m_candCounty').value : null;
-  var constId = document.getElementById('m_candConst') ? document.getElementById('m_candConst').value : null;
-  var ward = document.getElementById('m_candWard') ? document.getElementById('m_candWard').value : null;
+  var county  = document.getElementById('m_candCounty') ? document.getElementById('m_candCounty').value : null;
+  var constId = document.getElementById('m_candConst')  ? document.getElementById('m_candConst').value  : null;
+  var ward    = document.getElementById('m_candWard')   ? document.getElementById('m_candWard').value   : null;
 
   if (!name || !party || !code) return toast('Fill name, party, and code.', 'error');
   
   if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
     return toast('Please select a County for this position.', 'error');
   }
-  if (pos === 'MP' && !constId) {
-    return toast('Please select a Constituency for the MP.', 'error');
+  if (pos === 'MP') {
+    if (!county)  return toast('Please select a County first.', 'error');
+    if (!constId) return toast('Please select a Constituency for the MP.', 'error');
   }
-  if (pos === 'MCA' && !ward) {
-    return toast('Please select a Ward for the MCA.', 'error');
+  if (pos === 'MCA') {
+    if (!county)  return toast('Please select a County first.', 'error');
+    if (!constId) return toast('Please select a Constituency first.', 'error');
+    if (!ward)    return toast('Please select a Ward for the MCA.', 'error');
   }
 
   var saveBtn = document.getElementById('m_candSaveBtn');
@@ -3132,13 +3194,11 @@ function candPosChanged() {
     if (photoFile) {
       saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing…';
       
-      // Compress the image to max 0.2MB (200KB)
       const options = { maxSizeMB: 0.2, maxWidthOrHeight: 800, useWebWorker: true };
       const compressedFile = await imageCompression(photoFile, options);
 
       saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading…';
       
-      // Upload to Supabase Storage
       const fileExt = compressedFile.name.split('.').pop();
       const fileName = `${Date.now()}_${code}.${fileExt}`;
       
@@ -3148,7 +3208,6 @@ function candPosChanged() {
 
       if (uploadError) throw new Error('Upload failed: ' + uploadError.message);
 
-      // Get the public URL
       const { data: urlData } = db.storage.from('candidate-photos').getPublicUrl(fileName);
       finalPhotoUrl = urlData.publicUrl;
     }
