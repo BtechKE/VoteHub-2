@@ -2921,16 +2921,24 @@ function modalHead(title, sub) { return `<div class="modal-head"><div><div class
 // ================================================================
 //  WARDS CRUD
 // ================================================================
+
 function openWardModal() {
-  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  var currentCountyName = COUNTIES.find(c => c.id === CURRENT_COUNTY)?.name || 'Unknown';
+  
   openModal(modalHead('Add Ward') + `
-    <div class="form-group"><label>County</label><select id="m_wardCounty" onchange="filterWardConst()">${countyOpts}</select></div>
+    <div class="form-group">
+      <label>County</label>
+      <input value="${esc(currentCountyName)}" disabled style="background:var(--primary-tint); font-weight:700; color:var(--primary-dark);">
+      <input type="hidden" id="m_wardCounty" value="${CURRENT_COUNTY}"> <!-- Locks the ID -->
+    </div>
     <div class="form-group"><label>Constituency</label><select id="m_wardConst"><option value="">— Select Constituency —</option></select></div>
     <div class="form-group"><label>Ward Name</label><input id="m_wardName" placeholder="e.g. Kitisuru"></div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveWard()">Save</button></div>
   `);
+  
+  // Auto-fill the constituencies since county is already locked
+  filterWardConst(); 
 }
-
 function filterWardConst() {
   var countyId = document.getElementById('m_wardCounty').value;
   var consts = CONSTITUENCIES.filter(c => c.county_id === countyId);
@@ -2967,14 +2975,22 @@ function editWard(id, name, constituency_id) {
 //  CENTRES CRUD
 // ================================================================
 function openCentreModal() {
-  var countyOpts = `<option value="">— Select County —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  var currentCountyName = COUNTIES.find(c => c.id === CURRENT_COUNTY)?.name || 'Unknown';
+  
   openModal(modalHead('Add Centre') + `
-    <div class="form-group"><label>County</label><select id="m_centreCounty" onchange="filterCentreConst()">${countyOpts}</select></div>
+    <div class="form-group">
+      <label>County</label>
+      <input value="${esc(currentCountyName)}" disabled style="background:var(--primary-tint); font-weight:700; color:var(--primary-dark);">
+      <input type="hidden" id="m_centreCounty" value="${CURRENT_COUNTY}"> <!-- Locks the ID -->
+    </div>
     <div class="form-group"><label>Constituency</label><select id="m_centreConst" onchange="filterCentreWard()"><option value="">— Select Constituency —</option></select></div>
     <div class="form-group"><label>Ward</label><select id="m_centreWard"><option value="">— Select Ward —</option></select></div>
     <div class="form-group"><label>Centre Name</label><input id="m_centreName"></div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveCentre()">Save</button></div>
   `);
+  
+  // Auto-fill the constituencies
+  filterCentreConst();
 }
 
 function filterCentreConst() {
