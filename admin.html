@@ -2723,16 +2723,40 @@ async function loadAllData() {
   renderLocations();
 }
 
-  async function loadCounties() {
+async function loadCounties() {
   const { data } = await db.from('counties').select('*').order('name');
   COUNTIES = data || [];
+  
+  var selector = document.getElementById('globalCountySelector');
+  if (!selector) return;
+  
+  if (COUNTIES.length === 0) {
+    selector.innerHTML = '<option value="">No Counties Added</option>';
+    return;
+  }
+
+  selector.innerHTML = COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)} County</option>`).join('');
+  
+  if (!CURRENT_COUNTY) {
+    CURRENT_COUNTY = COUNTIES[0].id;
+  }
+  selector.value = CURRENT_COUNTY;
 }
+
+function switchCounty(countyId) {
+  CURRENT_COUNTY = countyId;
+  var countyName = COUNTIES.find(c => c.id === countyId)?.name || 'County';
+  toast('Switched to ' + countyName, 'info');
+  refreshAll(); 
+}
+
 async function loadConstituencies() {
-  const { data } = await db.from('constituencies').select('*').order('name');
+  // ONLY load constituencies for the active county
+  const { data } = await db.from('constituencies').select('*').eq('county_id', CURRENT_COUNTY).order('name');
   CONSTITUENCIES = data || [];
 }
 
- function renderLocations() {
+function renderLocations() {
   var el = document.getElementById('locationsList');
   if (!COUNTIES.length) {
     el.innerHTML = emptyHTML('No counties yet', 'Add a county to get started.');
@@ -2763,29 +2787,68 @@ async function loadConstituencies() {
   });
   el.innerHTML = html;
 } 
+
 async function loadWards() {
   const { data } = await db.from('wards').select('*').order('name');
-  WARDS = data || []; renderWards(); document.getElementById('statWards').textContent = WARDS.length; document.getElementById('badgeWards').textContent = WARDS.length;
+  // Filter wards to only those belonging to the active county's constituencies
+  var constIds = CONSTITUENCIES.map(c => c.id);
+  WARDS = (data || []).filter(w => constIds.includes(w.constituency_id)); 
+  
+  renderWards(); 
+  document.getElementById('statWards').textContent = WARDS.length; 
+  document.getElementById('badgeWards').textContent = WARDS.length;
 }
+
 async function loadCentres() {
   const { data } = await db.from('centres').select('*').order('name');
-  CENTRES = data || []; renderCentres(); document.getElementById('statCentres').textContent = CENTRES.length; document.getElementById('badgeCentres').textContent = CENTRES.length;
+  // Filter centres to only those in the active wards
+  var wardIds = WARDS.map(w => w.id);
+  CENTRES = (data || []).filter(c => wardIds.includes(c.ward_id)); 
+  
+  renderCentres(); 
+  document.getElementById('statCentres').textContent = CENTRES.length; 
+  document.getElementById('badgeCentres').textContent = CENTRES.length;
 }
+
 async function loadStreams() {
   const { data } = await db.from('streams').select('*').order('code');
-  STREAMS = data || []; renderStreams(); document.getElementById('statStreams').textContent = STREAMS.length; document.getElementById('badgeStreams').textContent = STREAMS.length;
+  // Filter streams to only those in the active centres
+  var centreIds = CENTRES.map(c => c.id);
+  STREAMS = (data || []).filter(s => centreIds.includes(s.centre_id)); 
+  
+  renderStreams(); 
+  document.getElementById('statStreams').textContent = STREAMS.length; 
+  document.getElementById('badgeStreams').textContent = STREAMS.length;
 }
+
 async function loadCandidates() {
-  const { data } = await db.from('candidates').select('*').order('name');
-  CANDIDATES = data || []; renderCandidates(); document.getElementById('statCandidates').textContent = CANDIDATES.length; document.getElementById('badgeCandidates').textContent = CANDIDATES.length;
+  // ONLY load candidates for the active county
+  const { data } = await db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY).order('name');
+  CANDIDATES = data || []; 
+  
+  renderCandidates(); 
+  document.getElementById('statCandidates').textContent = CANDIDATES.length; 
+  document.getElementById('badgeCandidates').textContent = CANDIDATES.length;
 }
+
 async function loadAgents() {
-  const { data } = await db.from('agents').select('*').order('name');
-  AGENTS = data || []; renderAgents(); document.getElementById('statAgents').textContent = AGENTS.length; document.getElementById('badgeAgents').textContent = AGENTS.length;
+  // ONLY load agents for the active county
+  const { data } = await db.from('agents').select('*').eq('county_id', CURRENT_COUNTY).order('name');
+  AGENTS = data || []; 
+  
+  renderAgents(); 
+  document.getElementById('statAgents').textContent = AGENTS.length; 
+  document.getElementById('badgeAgents').textContent = AGENTS.length;
 }
+
 async function loadAspirants() {
-  const { data } = await db.from('aspirants').select('*').order('name');
-  ASPIRANTS = data || []; renderAspirants(); document.getElementById('statAspirants').textContent = ASPIRANTS.length; document.getElementById('badgeAspirants').textContent = ASPIRANTS.length;
+  // ONLY load aspirants for the active county
+  const { data } = await db.from('aspirants').select('*').eq('county_id', CURRENT_COUNTY).order('name');
+  ASPIRANTS = data || []; 
+  
+  renderAspirants(); 
+  document.getElementById('statAspirants').textContent = ASPIRANTS.length; 
+  document.getElementById('badgeAspirants').textContent = ASPIRANTS.length;
 }
 
 // ================================================================
