@@ -584,9 +584,11 @@ var DRILL_WARD_NAME = '';
 var DRILL_CENTRE = ''; 
 var DRILL_CENTRE_NAME = ''; 
 var DRILL_DATA = null;
-
 // --- TRACKER STATE ---
 var TRACKER_DATA = null; 
+var TRACKER_LEVEL = ''; // 'constituency', 'ward', 'centre', 'stream'
+var TRACKER_CONST_ID = ''; 
+var TRACKER_CONST_NAME = '';
 var TRACKER_WARD = ''; 
 var TRACKER_WARD_NAME = '';
 var TRACKER_CENTRE = ''; 
@@ -618,12 +620,12 @@ async function init() {
 
   document.getElementById('topName').textContent = USER.name || 'Viewer';
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
-
   // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
-  if (USER.isSpectator || USER.position === 'President') {
-    SCOPE_MODE = 'national';
-    DRILL_LEVEL = 'constituency';
-    document.getElementById('nationalScopeWrap').style.display = 'flex';
+if (USER.isSpectator || USER.position === 'President') {
+  SCOPE_MODE = 'national';
+  DRILL_LEVEL = 'constituency';
+  TRACKER_LEVEL = 'constituency'; // <-- ADD THIS
+  document.getElementById('nationalScopeWrap').style.display = 'flex';
     
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
@@ -635,15 +637,21 @@ async function init() {
     // Fetch names for the premium badge
     let scopeName = 'Scope';
     if (USER.position === 'MCA') {
-      SCOPE_MODE = 'ward'; DRILL_LEVEL = 'centre';
+  SCOPE_MODE = 'ward'; 
+  DRILL_LEVEL = 'centre';
+  TRACKER_LEVEL = 'centre'; // <-- ADD THIS
       const { data: w } = await db.from('wards').select('name').eq('id', USER.ward).single();
       scopeName = w ? w.name + ' Ward' : 'Ward';
     } else if (USER.position === 'MP') {
-      SCOPE_MODE = 'constituency'; DRILL_LEVEL = 'ward';
+  SCOPE_MODE = 'constituency'; 
+  DRILL_LEVEL = 'ward';
+  TRACKER_LEVEL = 'ward'; // <-- ADD THIS
       const { data: c } = await db.from('constituencies').select('name').eq('id', USER.constituency).single();
       scopeName = c ? c.name + ' Constituency' : 'Constituency';
     } else {
-      SCOPE_MODE = 'county'; DRILL_LEVEL = 'constituency';
+  SCOPE_MODE = 'county'; 
+  DRILL_LEVEL = 'constituency';
+  TRACKER_LEVEL = 'constituency'; // <-- ADD THIS
       const { data: c } = await db.from('counties').select('name').eq('id', USER.county).single();
       scopeName = c ? c.name + ' County' : 'County';
     }
@@ -842,22 +850,23 @@ async function loadTracker(silent) {
   if (!silent) document.getElementById('trackerGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>';
   try {
     var filterWardIds = [];
-    if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
-      var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
-      const { data: consts } = await db.from('constituencies').select('id').eq('county_id', activeCounty);
-      const { data: wards } = await db.from('wards').select('id').in('constituency_id', (consts||[]).map(c=>c.id));
-      filterWardIds = (wards || []).map(w => w.id);
-    } 
-    else if (SCOPE_MODE === 'constituency') {
-      const { data: wards } = await db.from('wards').select('id').eq('constituency_id', USER.constituency);
-      filterWardIds = (wards || []).map(w => w.id);
-    } 
-    else if (SCOPE_MODE === 'ward') {
-      filterWardIds = [USER.ward];
-    }
+    var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
 
-    const [ { data: wardsData }, { data: centresData }, { data: streamsData } ] = await Promise.all([
-        db.from('wards').select('*').in('id', filterWardIds).order('name'), 
+    // Fetch Constituencies based on scope
+    let constQuery = db.from('constituencies').select('*');
+    if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
+    else if (activeCounty) constQuery = constQuery.eq('county_id', activeCounty);
+    const { data: constsData } = await constQuery;
+
+    // Fetch Wards
+    let wardQuery = db.from('wards').select('*');
+    if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
+    else wardQuery = wardQuery.in('constituency_id', (constsData || []).map(c => c.id));
+    const { data: wardsData } = await wardQuery;
+
+    filterWardIds = (wardsData || []).map(w => w.id);
+
+    const [ { data: centresData }, { data: streamsData } ] = await Promise.all([
         db.from('centres').select('*').in('ward_id', filterWardIds),
         db.from('streams').select('*').in('ward_id', filterWardIds)
     ]);
@@ -897,12 +906,23 @@ async function loadTracker(silent) {
         });
 
         totalCompleteStreams += wStreamsComplete;
-        return { wardId: w.id, wardName: w.name, streamsTotal: wStreamsTotal, streamsComplete: wStreamsComplete, cellsDone: wCellsDone, cellsTotal: wCellsTotal, centres: trackerCentres };
+        return { 
+            wardId: w.id, 
+            wardName: w.name, 
+            constituency_id: w.constituency_id, // <-- CRITICAL for grouping!
+            streamsTotal: wStreamsTotal, 
+            streamsComplete: wStreamsComplete, 
+            cellsDone: wCellsDone, 
+            cellsTotal: wCellsTotal, 
+            centres: trackerCentres 
+        };
     });
 
     TRACKER_DATA = {
         isMCA: (!USER.isSpectator && USER.position === 'MCA'), scopedWardName: USER.ward || '',
-        positions: POSITIONS, wards: trackerWards,
+        positions: POSITIONS, 
+        consts: constsData || [],
+        wards: trackerWards,
         summary: { totalStreams: streamsData.length, completeStreams: totalCompleteStreams, pendingStreams: streamsData.length - totalCompleteStreams, cellsDone: (resultsData || []).length, cellsTotal: streamsData.length * POSITIONS.length, staleCount: 0, lastSubmitAt: null }
     };
     renderTracker();
@@ -1348,61 +1368,94 @@ function renderTrackerGrid() {
   var sub = document.getElementById('trackerSub'); 
   var count = document.getElementById('trackerCount');
 
-  // --- WARD LEVEL ---
-  if (!TRACKER_WARD) {
-    title.textContent = TRACKER_DATA.isMCA ? TRACKER_DATA.scopedWardName + ' Ward · Status' : 'Ward Status';
-    sub.textContent = TRACKER_DATA.isMCA ? 'Streams in your ward · all positions' : 'Constituency-wide submission status';
+  // --- LEVEL 1: CONSTITUENCIES ---
+  if (TRACKER_LEVEL === 'constituency') {
+    title.textContent = 'Constituency Status';
+    sub.textContent = 'Submission progress by constituency';
     
-    var wards = TRACKER_DATA.wards || []; 
-    count.textContent = wards.length + ' wards';
+    // Group wards by constituency
+    var constGroups = {};
+    (TRACKER_DATA.consts || []).forEach(c => { constGroups[c.id] = { id: c.id, name: c.name, streamsTotal: 0, streamsComplete: 0, cellsDone: 0, cellsTotal: 0 }; });
     
-    if (!wards.length) { 
-      gridEl.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon"><i class="fas fa-inbox"></i></div><div class="empty-title">No wards</div></div>'; 
-      return; 
-    }
-    gridEl.innerHTML = wards.map(renderTrackerWardCard).join(''); 
+    (TRACKER_DATA.wards || []).forEach(w => {
+      if (constGroups[w.constituency_id]) {
+        constGroups[w.constituency_id].streamsTotal += w.streamsTotal;
+        constGroups[w.constituency_id].streamsComplete += w.streamsComplete;
+        constGroups[w.constituency_id].cellsDone += w.cellsDone;
+        constGroups[w.constituency_id].cellsTotal += w.cellsTotal;
+      }
+    });
+
+    var groupsArr = Object.values(constGroups);
+    count.textContent = groupsArr.length + ' constituencies';
+    if (!groupsArr.length) { gridEl.innerHTML = '<div class="empty">No constituencies.</div>'; return; }
+
+    gridEl.innerHTML = groupsArr.map(c => {
+      var cellPct = c.cellsTotal > 0 ? (c.cellsDone / c.cellsTotal * 100) : 0; 
+      var isComplete = c.streamsTotal > 0 && c.streamsComplete === c.streamsTotal; 
+      var isPending = c.streamsComplete === 0;
+      var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); 
+      var chip = trackerChip(c.streamsComplete, c.streamsTotal);
+      
+      return `<div class="${cls}" onclick="trackerDrill('ward', '${c.id}', '${esc(c.name)}')">
+        <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Constituency</div></div><span class="card-status ${chip.cls}">${chip.label}</span></div>
+        <div><div class="card-numbers"><span class="card-votes">${c.streamsComplete} / ${c.streamsTotal}</span><span class="card-pct">${cellPct.toFixed(1)}%</span></div><div class="card-votes-lbl">Streams complete</div></div>
+        <div class="card-bar"><div class="card-bar-fill" style="width:${cellPct}%"></div></div>
+      </div>`;
+    }).join('');
     return;
   }
 
-  // --- CENTRE LEVEL ---
-  var ward = (TRACKER_DATA.wards || []).filter(function (w) { return w.wardId === TRACKER_WARD; })[0]; 
-  if (!ward) { gridEl.innerHTML = ''; return; }
+  // --- LEVEL 2: WARDS ---
+  if (TRACKER_LEVEL === 'ward') {
+    var myWards = TRACKER_DATA.wards.filter(w => w.constituency_id === TRACKER_CONST_ID);
+    title.textContent = TRACKER_CONST_NAME + ' Wards'; 
+    sub.textContent = 'Submission progress by ward';
+    count.textContent = myWards.length + ' wards';
 
-  if (!TRACKER_CENTRE) {
+    gridEl.innerHTML = myWards.map(renderTrackerWardCard).join('');
+    return;
+  }
+
+  // --- LEVEL 3: CENTRES ---
+  if (TRACKER_LEVEL === 'centre') {
+    var ward = TRACKER_DATA.wards.find(w => w.wardId === TRACKER_WARD);
+    if (!ward) { gridEl.innerHTML = ''; return; }
+
     title.textContent = ward.wardName + ' Centres'; 
     sub.textContent = ward.streamsComplete + ' of ' + ward.streamsTotal + ' streams complete'; 
     count.textContent = ward.centres.length + ' centres';
     
-    if (!ward.centres.length) { 
-      gridEl.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-title">No centres</div></div>'; 
-      return; 
-    }
     gridEl.innerHTML = ward.centres.map(renderTrackerCentreCard).join(''); 
     return;
   }
 
-  // --- STREAM LEVEL ---
-  var centre = ward.centres.filter(function (c) { return c.centreId === TRACKER_CENTRE; })[0]; 
-  if (!centre) { gridEl.innerHTML = ''; return; }
-  
-  title.textContent = centre.centreName + ' Streams'; 
-  sub.textContent = centre.streamsComplete + ' of ' + centre.streamsTotal + ' streams complete · all positions'; 
-  count.textContent = centre.streams.length + ' streams';
-  
-  gridEl.innerHTML = centre.streams.map(renderTrackerStreamCard).join('');
-}
+  // --- LEVEL 4: STREAMS ---
+  if (TRACKER_LEVEL === 'stream') {
+    var ward = TRACKER_DATA.wards.find(w => w.wardId === TRACKER_WARD);
+    var centre = ward ? ward.centres.find(c => c.centreId === TRACKER_CENTRE) : null;
+    if (!centre) { gridEl.innerHTML = ''; return; }
+    
+    title.textContent = centre.centreName + ' Streams'; 
+    sub.textContent = centre.streamsComplete + ' of ' + centre.streamsTotal + ' streams complete · all positions'; 
+    count.textContent = centre.streams.length + ' streams';
+    
+    gridEl.innerHTML = centre.streams.map(renderTrackerStreamCard).join('');
+    return;
+  }
+ }
 
 function renderTrackerWardCard(w) {
   var cellPct = w.cellsTotal > 0 ? (w.cellsDone / w.cellsTotal * 100) : 0; var isComplete = w.streamsTotal > 0 && w.streamsComplete === w.streamsTotal; var isPending = w.streamsComplete === 0;
   var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); var chip = trackerChip(w.streamsComplete, w.streamsTotal);
   var lastHtml = w.lastAt ? '<div class="tracker-last"><i class="fas fa-clock"></i>Last ' + esc(timeAgo(new Date(w.lastAt).getTime())) + (w.lastBy ? ' · ' + esc(w.lastBy) : '') + '</div>' : '<div class="tracker-last empty">No submissions yet</div>';
-  return '<div class="' + cls + '" onclick="trackerDrillWard(\'' + escAttr(w.wardId) + '\',\'' + escAttr(w.wardName) + '\')"><div class="card-head"><div><div class="card-name">' + esc(w.wardName) + '</div><div class="card-sub">' + w.centres.length + ' centres · ' + w.streamsTotal + ' streams</div></div><span class="card-status ' + chip.cls + '">' + chip.label + '</span></div><div><div class="card-numbers"><span class="card-votes">' + w.streamsComplete + ' / ' + w.streamsTotal + '</span><span class="card-pct">' + cellPct.toFixed(1) + '%</span></div><div class="card-votes-lbl">Streams complete</div></div><div class="card-bar"><div class="card-bar-fill" style="width:' + cellPct + '%"></div></div>' + lastHtml + '</div>';
+return '<div class="' + cls + '" onclick="trackerDrill(\'centre\', \'' + escAttr(w.wardId) + '\',\'' + escAttr(w.wardName) + '\')">...
 }
 
 function renderTrackerCentreCard(c) {
   var cellPct = c.cellsTotal > 0 ? (c.cellsDone / c.cellsTotal * 100) : 0; var isComplete = c.streamsTotal > 0 && c.streamsComplete === c.streamsTotal; var isPending = c.streamsComplete === 0;
   var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); var chip = trackerChip(c.streamsComplete, c.streamsTotal);
-  return '<div class="' + cls + '" onclick="trackerDrillCentre(\'' + escAttr(c.centreId) + '\',\'' + escAttr(c.centreName) + '\')"><div class="card-head"><div><div class="card-name">' + esc(c.centreName) + '</div><div class="card-sub">' + c.streamsTotal + ' streams</div></div><span class="card-status ' + chip.cls + '">' + chip.label + '</span></div><div><div class="card-numbers"><span class="card-votes">' + c.streamsComplete + ' / ' + c.streamsTotal + '</span><span class="card-pct">' + cellPct.toFixed(1) + '%</span></div><div class="card-votes-lbl">Streams complete</div></div><div class="card-bar"><div class="card-bar-fill" style="width:' + cellPct + '%"></div></div></div>';
+return '<div class="' + cls + '" onclick="trackerDrill(\'stream\', \'' + escAttr(c.centreId) + '\',\'' + escAttr(c.centreName) + '\')">...
 }
 
 function renderTrackerStreamCard(s) {
