@@ -1528,24 +1528,47 @@ function trackerChip(done, total) {
   return { cls: 'pending', label: '<i class="fas fa-circle"></i> 0/' + total };
 }
 
-function trackerDrillWard(wardId, wardName) { TRACKER_WARD = wardId; TRACKER_WARD_NAME = wardName; TRACKER_CENTRE = ''; TRACKER_CENTRE_NAME = ''; renderTrackerBreadcrumb(); renderTrackerGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-function trackerDrillCentre(centreId, centreName) { TRACKER_CENTRE = centreId; TRACKER_CENTRE_NAME = centreName; renderTrackerBreadcrumb(); renderTrackerGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-function trackerBackToWards() { TRACKER_WARD = ''; TRACKER_WARD_NAME = ''; TRACKER_CENTRE = ''; TRACKER_CENTRE_NAME = ''; renderTrackerBreadcrumb(); renderTrackerGrid(); }
-function trackerBackToCentres() { TRACKER_CENTRE = ''; TRACKER_CENTRE_NAME = ''; renderTrackerBreadcrumb(); renderTrackerGrid(); }
+function trackerResetDrill() {
+  TRACKER_CONST_ID = ''; TRACKER_CONST_NAME = '';
+  TRACKER_WARD = ''; TRACKER_WARD_NAME = '';
+  TRACKER_CENTRE = ''; TRACKER_CENTRE_NAME = '';
 
+  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') TRACKER_LEVEL = 'constituency';
+  else if (SCOPE_MODE === 'constituency') TRACKER_LEVEL = 'ward';
+  else if (SCOPE_MODE === 'ward') TRACKER_LEVEL = 'centre';
+
+  renderTrackerBreadcrumb(); renderTrackerGrid();
+}
+
+function trackerDrill(level, id, name) {
+  if (level === 'ward') { TRACKER_CONST_ID = id; TRACKER_CONST_NAME = name; TRACKER_LEVEL = 'ward'; }
+  if (level === 'centre') { TRACKER_WARD = id; TRACKER_WARD_NAME = name; TRACKER_LEVEL = 'centre'; }
+  if (level === 'stream') { TRACKER_CENTRE = id; TRACKER_CENTRE_NAME = name; TRACKER_LEVEL = 'stream'; }
+  renderTrackerBreadcrumb(); renderTrackerGrid();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 function renderTrackerBreadcrumb() {
   var el = document.getElementById('trackerBreadcrumb');
-  if (TRACKER_DATA && TRACKER_DATA.isMCA) {
-    if (!TRACKER_CENTRE) { el.innerHTML = '<button class="bc-seg current"><i class="fas fa-layer-group"></i> ' + esc(TRACKER_DATA.scopedWardName) + ' Ward</button>'; }
-    else { el.innerHTML = '<button class="bc-seg" onclick="trackerBackToCentres()"><i class="fas fa-layer-group"></i> ' + esc(TRACKER_DATA.scopedWardName) + ' Ward</button><i class="fas fa-chevron-right bc-sep"></i><button class="bc-seg current">' + esc(TRACKER_CENTRE_NAME) + '</button>'; }
-    return;
+  if (!el) return;
+  var parts = [];
+
+  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
+      parts.push({ label: 'All Constituencies', active: TRACKER_LEVEL === 'constituency', onclick: 'trackerResetDrill()' });
+  } else if (SCOPE_MODE === 'constituency') {
+      parts.push({ label: 'All Wards', active: TRACKER_LEVEL === 'ward', onclick: 'trackerResetDrill()' });
+  } else if (SCOPE_MODE === 'ward') {
+      parts.push({ label: 'All Centres', active: TRACKER_LEVEL === 'centre', onclick: 'trackerResetDrill()' });
   }
-  var parts = [{ label: 'All Wards', active: !TRACKER_WARD, onclick: 'trackerBackToWards()' }];
-  if (TRACKER_WARD) { parts.push({ label: TRACKER_WARD_NAME, active: !TRACKER_CENTRE, onclick: 'trackerBackToCentres()' }); }
-  if (TRACKER_CENTRE) { parts.push({ label: TRACKER_CENTRE_NAME, active: true, onclick: '' }); }
-  el.innerHTML = parts.map(function (p, i) {
-    var cls = 'bc-seg' + (p.active ? ' current' : ''); var attr = p.active ? '' : ' onclick="' + p.onclick + '"';
-    return (i > 0 ? '<i class="fas fa-chevron-right bc-sep"></i>' : '') + '<button class="' + cls + '"' + attr + '>' + (i === 0 ? '<i class="fas fa-layer-group"></i> ' : '') + esc(p.label) + '</button>';
+
+  if (TRACKER_CONST_ID) parts.push({ label: TRACKER_CONST_NAME, active: TRACKER_LEVEL === 'ward', onclick: `trackerDrill('ward', '${TRACKER_CONST_ID}', '${TRACKER_CONST_NAME}')` });
+  if (TRACKER_WARD) parts.push({ label: TRACKER_WARD_NAME, active: TRACKER_LEVEL === 'centre', onclick: `trackerDrill('centre', '${TRACKER_WARD}', '${TRACKER_WARD_NAME}')` });
+  if (TRACKER_CENTRE) parts.push({ label: TRACKER_CENTRE_NAME, active: TRACKER_LEVEL === 'stream', onclick: `trackerDrill('stream', '${TRACKER_CENTRE}', '${TRACKER_CENTRE_NAME}')` });
+
+  el.innerHTML = parts.map((p, i) => {
+      var cls = 'bc-seg' + (p.active ? ' current' : '');
+      var attr = p.active ? '' : `onclick="${p.onclick}"`;
+      return (i > 0 ? '<i class="fas fa-chevron-right bc-sep"></i>' : '') +
+            `<button class="${cls}" ${attr}>${i===0 ? '<i class="fas fa-layer-group"></i> ' : ''}${esc(p.label)}</button>`;
   }).join('');
 }
 
