@@ -1446,16 +1446,57 @@ function renderTrackerGrid() {
  }
 
 function renderTrackerWardCard(w) {
-  var cellPct = w.cellsTotal > 0 ? (w.cellsDone / w.cellsTotal * 100) : 0; var isComplete = w.streamsTotal > 0 && w.streamsComplete === w.streamsTotal; var isPending = w.streamsComplete === 0;
-  var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); var chip = trackerChip(w.streamsComplete, w.streamsTotal);
+  var cellPct = w.cellsTotal > 0 ? (w.cellsDone / w.cellsTotal * 100) : 0; 
+  var isComplete = w.streamsTotal > 0 && w.streamsComplete === w.streamsTotal; 
+  var isPending = w.streamsComplete === 0;
+  var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); 
+  var chip = trackerChip(w.streamsComplete, w.streamsTotal);
   var lastHtml = w.lastAt ? '<div class="tracker-last"><i class="fas fa-clock"></i>Last ' + esc(timeAgo(new Date(w.lastAt).getTime())) + (w.lastBy ? ' · ' + esc(w.lastBy) : '') + '</div>' : '<div class="tracker-last empty">No submissions yet</div>';
-return '<div class="' + cls + '" onclick="trackerDrill(\'centre\', \'' + escAttr(w.wardId) + '\',\'' + escAttr(w.wardName) + '\')">...
+  
+  return `<div class="${cls}" onclick="trackerDrill('centre', '${escAttr(w.wardId)}', '${escAttr(w.wardName)}')">
+    <div class="card-head">
+      <div>
+        <div class="card-name">${esc(w.wardName)}</div>
+        <div class="card-sub">${w.centres.length} centres · ${w.streamsTotal} streams</div>
+      </div>
+      <span class="card-status ${chip.cls}">${chip.label}</span>
+    </div>
+    <div>
+      <div class="card-numbers">
+        <span class="card-votes">${w.streamsComplete} / ${w.streamsTotal}</span>
+        <span class="card-pct">${cellPct.toFixed(1)}%</span>
+      </div>
+      <div class="card-votes-lbl">Streams complete</div>
+    </div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:${cellPct}%"></div></div>
+    ${lastHtml}
+  </div>`;
 }
 
 function renderTrackerCentreCard(c) {
-  var cellPct = c.cellsTotal > 0 ? (c.cellsDone / c.cellsTotal * 100) : 0; var isComplete = c.streamsTotal > 0 && c.streamsComplete === c.streamsTotal; var isPending = c.streamsComplete === 0;
-  var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); var chip = trackerChip(c.streamsComplete, c.streamsTotal);
-return '<div class="' + cls + '" onclick="trackerDrill(\'stream\', \'' + escAttr(c.centreId) + '\',\'' + escAttr(c.centreName) + '\')">...
+  var cellPct = c.cellsTotal > 0 ? (c.cellsDone / c.cellsTotal * 100) : 0; 
+  var isComplete = c.streamsTotal > 0 && c.streamsComplete === c.streamsTotal; 
+  var isPending = c.streamsComplete === 0;
+  var cls = 'card' + (isComplete ? ' leading' : (isPending ? ' empty' : ' trailing')); 
+  var chip = trackerChip(c.streamsComplete, c.streamsTotal);
+  
+  return `<div class="${cls}" onclick="trackerDrill('stream', '${escAttr(c.centreId)}', '${escAttr(c.centreName)}')">
+    <div class="card-head">
+      <div>
+        <div class="card-name">${esc(c.centreName)}</div>
+        <div class="card-sub">${c.streamsTotal} streams</div>
+      </div>
+      <span class="card-status ${chip.cls}">${chip.label}</span>
+    </div>
+    <div>
+      <div class="card-numbers">
+        <span class="card-votes">${c.streamsComplete} / ${c.streamsTotal}</span>
+        <span class="card-pct">${cellPct.toFixed(1)}%</span>
+      </div>
+      <div class="card-votes-lbl">Streams complete</div>
+    </div>
+    <div class="card-bar"><div class="card-bar-fill" style="width:${cellPct}%"></div></div>
+  </div>`;
 }
 
 function renderTrackerStreamCard(s) {
