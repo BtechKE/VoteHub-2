@@ -3798,54 +3798,48 @@ var MCA_VIEW_WARD = '';   // '' = grid view, wardId = drill-in
 var CURRENT_RESULT_POS = 'President';
 
 async function loadAdminResults() {
-  const [ { data: cands }, { data: totals }, { data: wardRes }, { data: streamsData }, { data: resultsData } ] = await Promise.all([
-    db.from('candidates').select('*'), 
+  // 1. Get the active streams for this county
+  var activeStreamCodes = STREAMS.map(s => s.code);
+  if (activeStreamCodes.length === 0) activeStreamCodes = ['NONE']; // Prevent empty query error
+
+  // 2. Fetch totals, ward results, and ONLY the results for this county's streams
+  const [ { data: totals }, { data: wardRes }, { data: resultsData } ] = await Promise.all([
     db.from('candidate_totals').select('*'), 
     db.from('ward_results').select('*'), 
-    db.from('streams').select('code'), 
-    db.from('results').select('stream_code')
+    db.from('results').select('stream_code').in('stream_code', activeStreamCodes) // <--- FILTERED
   ]);
 
-  if (!cands) return;
-  
   var candMap = {}; 
-  var totalMap = {}; (totals||[]).forEach(t => totalMap[t.candidate_code] = t.total_votes);
+  var totalMap = {}; 
+  (totals||[]).forEach(t => totalMap[t.candidate_code] = t.total_votes);
   
-  // 1. NORMALIZE THE IMAGE URLS RIGHT HERE
-  cands.forEach(c => {
-    c.photo_url = normalizeImageUrl(c.photo_url); // Converts GitHub blob to CDN
+  // Use the CANDIDATES array we already loaded (which is filtered by county)
+  CANDIDATES.forEach(c => {
+    c.photo_url = normalizeImageUrl(c.photo_url); 
     candMap[c.code] = c;
   });
 
-  // Build results by position
-  var resultsByPos = {}; POSITIONS.forEach(p => resultsByPos[p] = []);
-  cands.forEach(c => resultsByPos[c.position].push({ ...c, votes: totalMap[c.code] || 0 }));
+  // Build results by position using our filtered candidates
+  var resultsByPos = {}; 
+  POSITIONS.forEach(p => resultsByPos[p] = []);
+  CANDIDATES.forEach(c => resultsByPos[c.position].push({ ...c, votes: totalMap[c.code] || 0 }));
 
-  // Build MCA Summary by Ward
-  var wardsList = [...new Set(wardRes.filter(w => w.position === 'MCA').map(w => w.ward_id))];
+  // Build MCA Summary by Ward (only for active wards)
+  var activeWardIds = WARDS.map(w => w.id);
+  var wardsList = [...new Set((wardRes || []).filter(w => w.position === 'MCA' && activeWardIds.includes(w.ward_id)).map(w => w.ward_id))];
+  
   MCA_SUMMARY = wardsList.map(wId => {
-    var wCands = wardRes.filter(w => w.ward_id === wId && w.position === 'MCA').map(w => {
+    var wCands = (wardRes || []).filter(w => w.ward_id === wId && w.position === 'MCA').map(w => {
       var c = candMap[w.candidate_code] || {};
-      return { 
-        code: w.candidate_code, 
-        name: c.name, 
-        party: c.party, 
-        photo_url: c.photo_url, // This is now the normalized CDN link
-        votes: w.total_votes 
-      };
+      return { code: w.candidate_code, name: c.name, party: c.party, photo_url: c.photo_url, votes: w.total_votes };
     }).sort((a,b) => b.votes - a.votes);
     
     var wTotal = wCands.reduce((sum, c) => sum + c.votes, 0);
     var wLeader = wCands[0] || null;
-    
     var wardObj = WARDS.find(w => w.id === wId);
     
     return { 
-      wardId: wId, 
-      wardName: wardObj ? wardObj.name : wId, 
-      candidates: wCands, 
-      leader: wLeader, 
-      totalVotes: wTotal, 
+      wardId: wId, wardName: wardObj ? wardObj.name : wId, candidates: wCands, leader: wLeader, totalVotes: wTotal, 
       leaderPct: wTotal > 0 && wLeader ? ((wLeader.votes / wTotal) * 100).toFixed(1) : '0.0' 
     };
   }).sort((a,b) => a.wardName.localeCompare(b.wardName));
@@ -3853,13 +3847,14 @@ async function loadAdminResults() {
   RESULTS_DATA = { 
     results: resultsByPos, 
     reported: new Set((resultsData||[]).map(r => r.stream_code)).size, 
-    totalStreams: (streamsData||[]).length 
+    totalStreams: STREAMS.length // Use the filtered STREAMS length
   };
   
   document.getElementById('resultsSub').textContent = RESULTS_DATA.reported + ' of ' + RESULTS_DATA.totalStreams + ' streams have reported · live';
   renderResultTabs();
   renderResults();
 }
+
 
 async function refreshResults(btn) {
   if (btn) thBtnLoad(btn, 'Refreshing…');
@@ -4052,35 +4047,40 @@ async function refreshTracker(btn) {
   await loadSubmissionMatrix();
   if (btn) thBtnDone(btn);
 }
-
+  
 async function loadSubmissionMatrix() {
   document.getElementById('trackerList').innerHTML = '<div class="loading-inline"><i class="fas fa-spinner"></i>Loading tracker…</div>';
   
   try {
-    const [{ data: wards }, { data: centres }, { data: streams }, { data: results }] = await Promise.all([
-      db.from('wards').select('*').order('name'),
-      db.from('centres').select('*'),
-      db.from('streams').select('*'),
-      db.from('results').select('stream_code, position')
-    ]);
+    var activeStreamCodes = STREAMS.map(s => s.code);
+    
+    // If no streams in this county, clear the tracker immediately
+    if (activeStreamCodes.length === 0) {
+      TRACKER_DATA = { positions: POSITIONS, groups: [], summary: { totalStreams: 0, totalCells: 0, submittedCells: 0, fullyReportedStreams: 0 } };
+      populateTrackerWards(); renderTracker(); updateTrackerBadge();
+      return;
+    }
 
-    // Build submission index
+    // ONLY fetch results for this county's streams
+    const { data: results } = await db.from('results').select('stream_code, position').in('stream_code', activeStreamCodes);
+
     var submitted = {};
     (results || []).forEach(r => {
       if (!submitted[r.stream_code]) submitted[r.stream_code] = {};
       submitted[r.stream_code][r.position] = true;
     });
 
-    var totalStreams = (streams || []).length;
+    var totalStreams = STREAMS.length;
     var totalCells = totalStreams * POSITIONS.length;
     var submittedCells = (results || []).length;
     var fullyReported = 0;
     var groups = [];
 
-    (wards || []).forEach(w => {
-      var wCentres = (centres || []).filter(c => c.ward_id === w.id);
+    // Use the global WARDS and CENTRES arrays (already filtered by county)
+    WARDS.forEach(w => {
+      var wCentres = CENTRES.filter(c => c.ward_id === w.id);
       wCentres.forEach(c => {
-        var cStreams = (streams || []).filter(s => s.centre_id === c.id).sort((a,b) => a.stream_number - b.stream_number);
+        var cStreams = STREAMS.filter(s => s.centre_id === c.id).sort((a,b) => a.stream_number - b.stream_number);
         if (!cStreams.length) return;
 
         var streamRows = cStreams.map(s => {
@@ -4100,34 +4100,19 @@ async function loadSubmissionMatrix() {
           if (isComplete) fullyReported++;
 
           return {
-            code: s.code,
-            streamNumber: s.stream_number,
+            code: s.code, streamNumber: s.stream_number,
             label: 'STR ' + String(s.stream_number).padStart(2, '0'),
-            statuses: statuses,
-            submittedCount: submittedCount,
-            isComplete: isComplete
+            statuses: statuses, submittedCount: submittedCount, isComplete: isComplete
           };
         });
 
-        groups.push({
-          wardId: w.id,
-          wardName: w.name,
-          centreId: c.id,
-          centreName: c.name,
-          streams: streamRows
-        });
+        groups.push({ wardId: w.id, wardName: w.name, centreId: c.id, centreName: c.name, streams: streamRows });
       });
     });
 
     TRACKER_DATA = {
-      positions: POSITIONS,
-      groups: groups,
-      summary: {
-        totalStreams: totalStreams,
-        totalCells: totalCells,
-        submittedCells: submittedCells,
-        fullyReportedStreams: fullyReported
-      }
+      positions: POSITIONS, groups: groups,
+      summary: { totalStreams: totalStreams, totalCells: totalCells, submittedCells: submittedCells, fullyReportedStreams: fullyReported }
     };
 
     populateTrackerWards();
