@@ -1988,14 +1988,13 @@ body::after {
 ============================================================ -->
 <div class="page">
 <div class="syscontrol">
-  
-  <!-- NEW: GLOBAL COUNTY SELECTOR -->
-  <div class="sys-group" style="flex: 1; min-width: 220px; border-right: 1px solid var(--border); padding-right: 16px; margin-right: 8px;">
-    <span class="sys-label" style="color: var(--primary-dark);"><i class="fas fa-map-marked-alt"></i> Active County</span>
-    <select id="globalCountySelector" onchange="switchCounty(this.value)" style="padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 14px; border: 2px solid var(--primary); background: var(--surface); color: var(--text); width: 100%; cursor: pointer;">
-      <option value="">Loading counties…</option>
-    </select>
-  </div>
+<!-- NEW: GLOBAL COUNTY SELECTOR (Compact Version) -->
+<div class="sys-group" style="border-right: 1px solid var(--border); padding-right: 16px;">
+  <span class="sys-label" style="color: var(--primary-dark);"><i class="fas fa-map-marked-alt"></i> Active County</span>
+  <select id="globalCountySelector" onchange="switchCounty(this.value)" style="padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 14px; border: 2px solid var(--primary); background: var(--surface); color: var(--text); width: auto; min-width: 170px; max-width: 200px; cursor: pointer;">
+    <option value="">Loading counties…</option>
+  </select>
+</div>
 
   <div class="sys-group">
     <span class="sys-label">Submission</span>
