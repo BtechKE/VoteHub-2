@@ -744,13 +744,13 @@ const totalByCand = {};
     }
 
     OVERVIEW = {
-      viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
-      leader: leaderboard[0], runner: leaderboard[1], 
-      margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
-      consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
-      votesByConst, votesByWard, votesByCentre, candMap,
-      reported: (resultsData || []).length, totalStreams: (streamsData || []).length
-    };
+  viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
+  leader: leaderboard[0], runner: leaderboard[1], 
+  margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
+  consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
+  votesByConst, votesByWard, votesByCentre, votesByStream, candMap, // <--- ADD votesByStream HERE
+  reported: (resultsData || []).length, totalStreams: (streamsData || []).length
+};
 
     renderTabs(); renderHero(); renderDrillGrid(); renderBoard();
     setPulse('live');
