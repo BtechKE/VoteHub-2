@@ -409,16 +409,20 @@
 <body>
 
 <!-- TOPBAR -->
-<div class="topbar">
-  <div class="topbar-left">
-    <span class="pulse" id="topPulse"></span>
-    <div class="topbar-info">
-      <div class="topbar-name" id="topName">Loading…</div>
-      <div class="topbar-meta" id="topMeta">—</div>
-    </div>
+<div class="topbar-right">
+  <!-- NEW: Scope Selector for President/Spectator -->
+  <div id="nationalScopeWrap" style="display:none; align-items:center; gap:8px;">
+    <select id="aspCountySelector" onchange="switchAspCounty(this.value)" style="padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 12px; border: 1.5px solid rgba(26, 26, 25, 0.2); background: #1A1A19; color: #A5CF83; cursor: pointer;">
+      <option value="">Loading…</option>
+    </select>
   </div>
-  <div class="topbar-right">
-    <button class="topbar-refresh" id="topRefresh" onclick="manualRefresh()" title="Refresh now">
+  <!-- NEW: Locked Scope Label for Governor/MP/MCA -->
+  <div id="lockedScopeWrap" style="display:none; align-items:center; gap:6px; font-size:12px; font-weight:700; color:rgba(26,26,25,0.7); padding: 4px 10px; border-radius: 8px; background: rgba(26,26,25,0.08);">
+    <i class="fas fa-lock"></i> <span id="lockedScopeName">Scope</span>
+  </div>
+
+  <button class="topbar-refresh" id="topRefresh" onclick="manualRefresh()" title="Refresh now">
+    <!-- ... existing refresh button ... -->
       <i class="fas fa-arrows-rotate" id="topRefreshIcon"></i>
     </button>
     <button class="topbar-logout" onclick="doLogout()">
@@ -525,6 +529,8 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 //  CONSTANTS & STATE
 // ================================================================
+var SCOPE_MODE = 'national'; // can be 'national', 'county', 'constituency', or 'ward'
+var CURRENT_COUNTY = ''; 
 var USER = null; var TOKEN = "supabase"; var OVERVIEW = null; var VIEW_POS = 'President';
 var CURRENT_VIEW = 'results'; var DRILL_WARD = ''; var DRILL_WARD_NAME = '';
 var DRILL_CENTRE = ''; var DRILL_CENTRE_NAME = ''; var DRILL_DATA = null;
@@ -545,17 +551,51 @@ async function init() {
   if (!profile) { alert("Profile not found"); doLogout(); return; }
   
   USER = {
-    name: profile.name, position: profile.position, ward: profile.ward_id,
-    loginCode: profile.login_code, isSpectator: profile.is_spectator
+    name: profile.name, position: profile.position, 
+    ward: profile.ward_id, constituency: profile.constituency_id, 
+    county: profile.county_id, loginCode: profile.login_code, isSpectator: profile.is_spectator
   };
 
   document.getElementById('topName').textContent = USER.name || 'Viewer';
-  updateTopMeta();
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
+  // --- SCOPE LOGIC ---
+  if (USER.isSpectator || USER.position === 'President') {
+    SCOPE_MODE = 'national';
+    document.getElementById('nationalScopeWrap').style.display = 'flex';
+    // Load all counties for the dropdown
+    const { data: counties } = await db.from('counties').select('id, name').order('name');
+    if (counties && counties.length > 0) {
+      CURRENT_COUNTY = counties[0].id;
+      document.getElementById('aspCountySelector').innerHTML = counties.map(c => `<option value="${c.id}">${esc(c.name)} County</option>`).join('');
+      document.getElementById('aspCountySelector').value = CURRENT_COUNTY;
+    }
+  } else {
+    if (USER.position === 'MCA') {
+      SCOPE_MODE = 'ward';
+      document.getElementById('lockedScopeName').textContent = 'Locked to Ward';
+    } else if (USER.position === 'MP') {
+      SCOPE_MODE = 'constituency';
+      document.getElementById('lockedScopeName').textContent = 'Locked to Constituency';
+    } else {
+      SCOPE_MODE = 'county'; // Governor, Senator, Women Rep
+      document.getElementById('lockedScopeName').textContent = 'Locked to County';
+    }
+    document.getElementById('lockedScopeWrap').style.display = 'flex';
+  }
+
+  updateTopMeta();
   loadOverview();
   startAutoRefresh();
 }
+
+// Add this function right below init()
+function switchAspCounty(countyId) {
+  CURRENT_COUNTY = countyId;
+  toast('Switched view', 'info');
+  loadOverview();
+  if (CURRENT_VIEW === 'tracker') loadTracker();
+    }
 
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
@@ -590,27 +630,49 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
+    var filterWardIds = [];
+    var candQuery = db.from('candidates').select('*');
+
+    // 1. Build the scope filters based on who is logged in
+    if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
+      var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
+      candQuery = candQuery.eq('county_id', activeCounty);
+      const { data: consts } = await db.from('constituencies').select('id').eq('county_id', activeCounty);
+      const { data: wards } = await db.from('wards').select('id').in('constituency_id', (consts||[]).map(c=>c.id));
+      filterWardIds = (wards || []).map(w => w.id);
+    } 
+    else if (SCOPE_MODE === 'constituency') {
+      candQuery = candQuery.eq('constituency_id', USER.constituency);
+      const { data: wards } = await db.from('wards').select('id').eq('constituency_id', USER.constituency);
+      filterWardIds = (wards || []).map(w => w.id);
+    } 
+    else if (SCOPE_MODE === 'ward') {
+      candQuery = candQuery.eq('ward_id', USER.ward);
+      filterWardIds = [USER.ward];
+    }
+
+    // 2. Fetch everything using the filtered scopes
     const [ { data: cands }, { data: candTotals }, { data: wardRes }, { data: wardsData }, { data: streamsData }, { data: resultsData } ] = await Promise.all([
-        db.from('candidates').select('*'), db.from('candidate_totals').select('*'),
-        db.from('ward_results').select('*'), db.from('wards').select('*').order('name'),
-        db.from('streams').select('code, ward_id'), db.from('results').select('stream_code').eq('position', VIEW_POS)
+        candQuery,
+        db.from('candidate_totals').select('*'), 
+        db.from('ward_results').select('*').in('ward_id', filterWardIds), 
+        db.from('wards').select('*').in('id', filterWardIds).order('name'), 
+        db.from('streams').select('code, ward_id').in('ward_id', filterWardIds), 
+        db.from('results').select('stream_code').eq('position', VIEW_POS)
     ]);
 
-    // FIX: Call normalizeImageUrl and fix the photo_url typo
     const candMap = {}; 
-    cands.forEach(c => { 
+    (cands || []).forEach(c => { 
       c.photo_url = normalizeImageUrl(c.photo_url); 
       candMap[c.code] = c; 
     });
 
-    const totalMap = {}; candTotals.forEach(ct => totalMap[ct.candidate_code] = ct.total_votes);
+    const totalMap = {}; (candTotals || []).forEach(ct => totalMap[ct.candidate_code] = ct.total_votes);
 
     let leaderboardByPos = {}; POSITIONS.forEach(p => leaderboardByPos[p] = []);
-    cands.forEach(c => {
+    (cands || []).forEach(c => {
         const votes = totalMap[c.code] || 0;
-        leaderboardByPos[c.position].push({
-            code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: votes, ward: c.ward_id
-        });
+        leaderboardByPos[c.position].push({ code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: votes, ward: c.ward_id });
     });
 
     let tabTotals = {};
@@ -621,12 +683,16 @@ async function loadOverview(silent) {
         list.forEach(item => { item.pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0'; });
     }
 
-    let formattedWards = wardsData.map(w => {
-        const wStreams = streamsData.filter(s => s.ward_id === w.id);
-        const wStreamCodes = new Set(wStreams.map(s => s.code));
-        const reportedInWard = new Set(resultsData.filter(r => wStreamCodes.has(r.stream_code)).map(r => r.stream_code)).size;
+    // Filter results to only those from our scoped streams
+    var myStreamCodes = new Set((streamsData || []).map(s => s.code));
+    var myResults = (resultsData || []).filter(r => myStreamCodes.has(r.stream_code));
 
-        const wCandidates = wardRes.filter(wr => wr.ward_id === w.id && wr.position === VIEW_POS).map(wr => {
+    let formattedWards = (wardsData || []).map(w => {
+        const wStreams = (streamsData || []).filter(s => s.ward_id === w.id);
+        const wStreamCodes = new Set(wStreams.map(s => s.code));
+        const reportedInWard = new Set(myResults.filter(r => wStreamCodes.has(r.stream_code)).map(r => r.stream_code)).size;
+
+        const wCandidates = (wardRes || []).filter(wr => wr.ward_id === w.id && wr.position === VIEW_POS).map(wr => {
                 const c = candMap[wr.candidate_code] || {};
                 return { code: wr.candidate_code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: wr.total_votes };
             }).sort((a, b) => b.votes - a.votes);
@@ -651,8 +717,10 @@ async function loadOverview(silent) {
 
     OVERVIEW = {
         viewingPosition: VIEW_POS, leaderboard: currentList, globalTotal, ownRow, ownRank, leader, runner, margin,
-        tabTotals, wards: formattedWards, reported: new Set(resultsData.map(r => r.stream_code)).size,
-        totalStreams: streamsData.length, ownPhoto: ownRow ? ownRow.photo_url : ''
+        tabTotals, wards: formattedWards, 
+        reported: myResults.length, 
+        totalStreams: streamsData.length, 
+        ownPhoto: ownRow ? ownRow.photo_url : ''
     };
 
     lastRefreshAt = Date.now();
@@ -664,6 +732,7 @@ async function loadOverview(silent) {
     console.error(err); setPulse('stale'); if (!silent) toast('Connection error.', 'error');
   }
 }
+
 async function loadDrill(silent) {
   try {
     const [ { data: cands }, { data: streamsData }, { data: centresData }, { data: resultsData } ] = await Promise.all([
@@ -717,24 +786,43 @@ async function loadDrill(silent) {
 async function loadTracker(silent) {
   if (!silent) document.getElementById('trackerGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>';
   try {
-    const [ { data: wardsData }, { data: centresData }, { data: streamsData }, { data: resultsData } ] = await Promise.all([
-        db.from('wards').select('*').order('name'), db.from('centres').select('*'),
-        db.from('streams').select('*'), db.from('results').select('stream_code, position')
+    var filterWardIds = [];
+    if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
+      var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
+      const { data: consts } = await db.from('constituencies').select('id').eq('county_id', activeCounty);
+      const { data: wards } = await db.from('wards').select('id').in('constituency_id', (consts||[]).map(c=>c.id));
+      filterWardIds = (wards || []).map(w => w.id);
+    } 
+    else if (SCOPE_MODE === 'constituency') {
+      const { data: wards } = await db.from('wards').select('id').eq('constituency_id', USER.constituency);
+      filterWardIds = (wards || []).map(w => w.id);
+    } 
+    else if (SCOPE_MODE === 'ward') {
+      filterWardIds = [USER.ward];
+    }
+
+    const [ { data: wardsData }, { data: centresData }, { data: streamsData } ] = await Promise.all([
+        db.from('wards').select('*').in('id', filterWardIds).order('name'), 
+        db.from('centres').select('*').in('ward_id', filterWardIds),
+        db.from('streams').select('*').in('ward_id', filterWardIds)
     ]);
 
+    var streamCodes = (streamsData || []).map(s => s.code);
+    const { data: resultsData } = await db.from('results').select('stream_code, position').in('stream_code', streamCodes);
+
     const reportedMap = {};
-    resultsData.forEach(r => {
+    (resultsData || []).forEach(r => {
         if (!reportedMap[r.stream_code]) reportedMap[r.stream_code] = {};
         reportedMap[r.stream_code][r.position] = true;
     });
 
     let totalCompleteStreams = 0;
-    const trackerWards = wardsData.map(w => {
-        const wCentres = centresData.filter(c => c.ward_id === w.id);
+    const trackerWards = (wardsData || []).map(w => {
+        const wCentres = (centresData || []).filter(c => c.ward_id === w.id);
         let wStreamsTotal = 0, wStreamsComplete = 0, wCellsDone = 0, wCellsTotal = 0;
 
         const trackerCentres = wCentres.map(c => {
-            const cStreams = streamsData.filter(s => s.centre_id === c.id);
+            const cStreams = (streamsData || []).filter(s => s.centre_id === c.id);
             let cStreamsTotal = cStreams.length, cStreamsComplete = 0, cCellsDone = 0, cCellsTotal = cStreamsTotal * POSITIONS.length;
 
             const trackerStreams = cStreams.map(s => {
@@ -760,13 +848,14 @@ async function loadTracker(silent) {
     TRACKER_DATA = {
         isMCA: (!USER.isSpectator && USER.position === 'MCA'), scopedWardName: USER.ward || '',
         positions: POSITIONS, wards: trackerWards,
-        summary: { totalStreams: streamsData.length, completeStreams: totalCompleteStreams, pendingStreams: streamsData.length - totalCompleteStreams, cellsDone: resultsData.length, cellsTotal: streamsData.length * POSITIONS.length, staleCount: 0, lastSubmitAt: null }
+        summary: { totalStreams: streamsData.length, completeStreams: totalCompleteStreams, pendingStreams: streamsData.length - totalCompleteStreams, cellsDone: (resultsData || []).length, cellsTotal: streamsData.length * POSITIONS.length, staleCount: 0, lastSubmitAt: null }
     };
     renderTracker();
   } catch (err) {
     console.error(err); if (!silent) toast('Connection error.', 'error');
   }
 }
+
 
 // ================================================================
 //  RENDERING — TABS & HERO
