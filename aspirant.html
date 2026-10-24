@@ -426,10 +426,10 @@
       </select>
     </div>
 
-    <!-- Locked Scope Badge (Governor/MP/MCA) -->
-    <div id="lockedScopeWrap" style="display:none; align-items:center; gap:6px; font-size:12px; font-weight:700; color:rgba(26,26,25,0.7); padding: 4px 10px; border-radius: 8px; background: rgba(26,26,25,0.08);">
-      <i class="fas fa-lock"></i> <span id="lockedScopeName">Scope</span>
-    </div>
+    <!-- Locked Scope Badge (Premium) -->
+<div id="lockedScopeWrap" style="display:none; align-items:center; gap:6px; font-size:12px; font-weight:800; color:#1A1A19; padding: 6px 12px; border-radius: 12px; background: rgba(255,255,255,0.45); border: 1px solid rgba(26,26,25,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
+  <i class="fas fa-lock" style="color:var(--green-dark);"></i> <span id="lockedScopeName">Scope</span>
+</div>
 
     <button class="topbar-refresh" id="topRefresh" onclick="manualRefresh()" title="Refresh now">
       <i class="fas fa-arrows-rotate" id="topRefreshIcon"></i>
@@ -538,14 +538,37 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 //  CONSTANTS & STATE
 // ================================================================
-var USER = null; var TOKEN = "supabase"; var OVERVIEW = null; var VIEW_POS = 'President';
-var CURRENT_VIEW = 'results'; var DRILL_WARD = ''; var DRILL_WARD_NAME = '';
-var DRILL_CENTRE = ''; var DRILL_CENTRE_NAME = ''; var DRILL_DATA = null;
-var TRACKER_DATA = null; var TRACKER_WARD = ''; var TRACKER_WARD_NAME = '';
-var TRACKER_CENTRE = ''; var TRACKER_CENTRE_NAME = '';
-var refreshTimer = null; var trackerRefreshAt = null; var lastRefreshAt = null;
-var SCOPE_MODE = 'national'; // can be 'national', 'county', 'constituency', or 'ward'
+var USER = null; 
+var TOKEN = "supabase"; 
+var OVERVIEW = null; 
+var VIEW_POS = 'President';
+
+var CURRENT_VIEW = 'results'; 
+var SCOPE_MODE = 'national'; // 'national', 'county', 'constituency', or 'ward'
 var CURRENT_COUNTY = ''; 
+
+// --- DRILL DOWN STATE ---
+var DRILL_LEVEL = ''; // 'constituency', 'ward', or 'centre'
+var DRILL_CONST_ID = ''; 
+var DRILL_CONST_NAME = '';
+var DRILL_WARD = ''; 
+var DRILL_WARD_NAME = '';
+var DRILL_CENTRE = ''; 
+var DRILL_CENTRE_NAME = ''; 
+var DRILL_DATA = null;
+
+// --- TRACKER STATE ---
+var TRACKER_DATA = null; 
+var TRACKER_WARD = ''; 
+var TRACKER_WARD_NAME = '';
+var TRACKER_CENTRE = ''; 
+var TRACKER_CENTRE_NAME = '';
+
+// --- TIMERS ---
+var refreshTimer = null; 
+var trackerRefreshAt = null; 
+var lastRefreshAt = null;
+
 const POSITIONS = ['President', 'Governor', 'Senator', 'MP', 'Women Rep', 'MCA'];
 var POSITION_SHORT = { 'President': 'P', 'Governor': 'G', 'Senator': 'S', 'MP': 'M', 'Women Rep': 'W', 'MCA': 'C' };
 
@@ -559,32 +582,21 @@ async function init() {
   const { data: profile } = await db.from('aspirants').select('*').eq('auth_user_id', user.id).single();
   if (!profile) { alert("Profile not found"); doLogout(); return; }
   
-  // Build the USER object with ALL IDs
   USER = {
-    name: profile.name, 
-    position: profile.position, 
-    ward: profile.ward_id, 
-    constituency: profile.constituency_id, 
-    county: profile.county_id, 
-    loginCode: profile.login_code, 
-    isSpectator: profile.is_spectator
+    name: profile.name, position: profile.position, 
+    ward: profile.ward_id, constituency: profile.constituency_id, 
+    county: profile.county_id, loginCode: profile.login_code, isSpectator: profile.is_spectator
   };
 
-  console.log("LOGGED IN USER:", USER); // This will help us debug!
-
   document.getElementById('topName').textContent = USER.name || 'Viewer';
-  
-  // Automatically set the VIEW_POS to their position (if not spectator)
-  if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { 
-    VIEW_POS = USER.position; 
-  }
+  if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
-  // --- SCOPE LOGIC ---
+  // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
   if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
+    DRILL_LEVEL = 'constituency';
     document.getElementById('nationalScopeWrap').style.display = 'flex';
     
-    // Load all counties for the dropdown
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
       CURRENT_COUNTY = counties[0].id;
@@ -592,30 +604,29 @@ async function init() {
       document.getElementById('aspCountySelector').value = CURRENT_COUNTY;
     }
   } else {
+    // Fetch names for the premium badge
+    let scopeName = 'Scope';
     if (USER.position === 'MCA') {
-      SCOPE_MODE = 'ward';
-      document.getElementById('lockedScopeName').textContent = 'Locked to Ward';
+      SCOPE_MODE = 'ward'; DRILL_LEVEL = 'centre';
+      const { data: w } = await db.from('wards').select('name').eq('id', USER.ward).single();
+      scopeName = w ? w.name + ' Ward' : 'Ward';
     } else if (USER.position === 'MP') {
-      SCOPE_MODE = 'constituency';
-      document.getElementById('lockedScopeName').textContent = 'Locked to Constituency';
+      SCOPE_MODE = 'constituency'; DRILL_LEVEL = 'ward';
+      const { data: c } = await db.from('constituencies').select('name').eq('id', USER.constituency).single();
+      scopeName = c ? c.name + ' Constituency' : 'Constituency';
     } else {
-      SCOPE_MODE = 'county'; // Governor, Senator, Women Rep
-      document.getElementById('lockedScopeName').textContent = 'Locked to County';
+      SCOPE_MODE = 'county'; DRILL_LEVEL = 'constituency';
+      const { data: c } = await db.from('counties').select('name').eq('id', USER.county).single();
+      scopeName = c ? c.name + ' County' : 'County';
     }
+    
+    document.getElementById('lockedScopeName').textContent = scopeName;
     document.getElementById('lockedScopeWrap').style.display = 'flex';
   }
 
   updateTopMeta();
   loadOverview();
   startAutoRefresh();
-}
-
-// Add this right below init()
-function switchAspCounty(countyId) {
-  CURRENT_COUNTY = countyId;
-  toast('Switched view', 'info');
-  loadOverview();
-  if (CURRENT_VIEW === 'tracker') loadTracker();
 }
 
 function startAutoRefresh() {
@@ -651,108 +662,98 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
-    var filterWardIds = [];
-    var candQuery = db.from('candidates').select('*');
+    var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
+    if (!activeCounty && SCOPE_MODE !== 'ward' && SCOPE_MODE !== 'constituency') return;
 
-    // 1. Build the scope filters based on who is logged in
-    if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
-      var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
-      candQuery = candQuery.eq('county_id', activeCounty);
-      const { data: consts } = await db.from('constituencies').select('id').eq('county_id', activeCounty);
-      const { data: wards } = await db.from('wards').select('id').in('constituency_id', (consts||[]).map(c=>c.id));
-      filterWardIds = (wards || []).map(w => w.id);
-    } 
-    else if (SCOPE_MODE === 'constituency') {
-      candQuery = candQuery.eq('constituency_id', USER.constituency);
-      const { data: wards } = await db.from('wards').select('id').eq('constituency_id', USER.constituency);
-      filterWardIds = (wards || []).map(w => w.id);
-    } 
-    else if (SCOPE_MODE === 'ward') {
-      candQuery = candQuery.eq('ward_id', USER.ward);
-      filterWardIds = [USER.ward];
-    }
+    // 1. Fetch Geography
+    let constQuery = db.from('constituencies').select('*');
+    if (activeCounty) constQuery = constQuery.eq('county_id', activeCounty);
+    if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
+    const { data: consts } = await constQuery;
 
-    // 2. Fetch everything using the filtered scopes
-    const [ { data: cands }, { data: candTotals }, { data: wardRes }, { data: wardsData }, { data: streamsData }, { data: resultsData } ] = await Promise.all([
-        candQuery,
-        db.from('candidate_totals').select('*'), 
-        db.from('ward_results').select('*').in('ward_id', filterWardIds), 
-        db.from('wards').select('*').in('id', filterWardIds).order('name'), 
-        db.from('streams').select('code, ward_id').in('ward_id', filterWardIds), 
-        db.from('results').select('stream_code').eq('position', VIEW_POS)
-    ]);
+    let wardQuery = db.from('wards').select('*');
+    if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
+    else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
+    else wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
+    const { data: wardsData } = await wardQuery;
 
-    const candMap = {}; 
-    (cands || []).forEach(c => { 
-      c.photo_url = normalizeImageUrl(c.photo_url); 
-      candMap[c.code] = c; 
+    let centreQuery = db.from('centres').select('*').in('ward_id', (wardsData||[]).map(w=>w.id));
+    const { data: centresData } = await centreQuery;
+
+    let streamQuery = db.from('streams').select('*').in('centre_id', (centresData||[]).map(c=>c.id));
+    const { data: streamsData } = await streamQuery;
+
+    // 2. Fetch Candidates & Results
+    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
+    if (activeCounty) candQuery = candQuery.eq('county_id', activeCounty);
+    const { data: cands } = await candQuery;
+
+    const { data: resultsData } = await db.from('results').select('stream_code, candidate_code, votes').eq('position', VIEW_POS);
+
+    // 3. Build Lookup Maps for Fast Aggregation
+    const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
+    const streamMap = {}; (streamsData || []).forEach(s => streamMap[s.code] = s);
+    const centreMap = {}; (centresData || []).forEach(c => centreMap[c.id] = c);
+    const wardMap = {}; (wardsData || []).forEach(w => wardMap[w.id] = w);
+
+    // 4. Aggregate Votes
+    const votesByCentre = {};
+    const votesByWard = {};
+    const votesByConst = {};
+    const totalByCand = {};
+
+    (resultsData || []).forEach(r => {
+      const stream = streamMap[r.stream_code];
+      if (!stream) return; // Ignore results not in our scope
+      const centre = centreMap[stream.centre_id];
+      const ward = wardMap[centre.ward_id];
+
+      if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
+      totalByCand[r.candidate_code] += r.votes;
+
+      if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
+      if (!votesByCentre[centre.id][r.candidate_code]) votesByCentre[centre.id][r.candidate_code] = 0;
+      votesByCentre[centre.id][r.candidate_code] += r.votes;
+
+      if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
+      if (!votesByWard[ward.id][r.candidate_code]) votesByWard[ward.id][r.candidate_code] = 0;
+      votesByWard[ward.id][r.candidate_code] += r.votes;
+
+      if (!votesByConst[ward.constituency_id]) votesByConst[ward.constituency_id] = {};
+      if (!votesByConst[ward.constituency_id][r.candidate_code]) votesByConst[ward.constituency_id][r.candidate_code] = 0;
+      votesByConst[ward.constituency_id][r.candidate_code] += r.votes;
     });
 
-    const totalMap = {}; (candTotals || []).forEach(ct => totalMap[ct.candidate_code] = ct.total_votes);
-
-    let leaderboardByPos = {}; POSITIONS.forEach(p => leaderboardByPos[p] = []);
-    (cands || []).forEach(c => {
-        const votes = totalMap[c.code] || 0;
-        leaderboardByPos[c.position].push({ code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: votes, ward: c.ward_id });
-    });
-
-    let tabTotals = {};
-    for (let p in leaderboardByPos) {
-        const list = leaderboardByPos[p].sort((a, b) => b.votes - a.votes);
-        const total = list.reduce((s, c) => s + c.votes, 0);
-        tabTotals[p] = total;
-        list.forEach(item => { item.pct = total > 0 ? ((item.votes / total) * 100).toFixed(1) : '0.0'; });
-    }
-
-    // Filter results to only those from our scoped streams
-    var myStreamCodes = new Set((streamsData || []).map(s => s.code));
-    var myResults = (resultsData || []).filter(r => myStreamCodes.has(r.stream_code));
-
-    let formattedWards = (wardsData || []).map(w => {
-        const wStreams = (streamsData || []).filter(s => s.ward_id === w.id);
-        const wStreamCodes = new Set(wStreams.map(s => s.code));
-        const reportedInWard = new Set(myResults.filter(r => wStreamCodes.has(r.stream_code)).map(r => r.stream_code)).size;
-
-        const wCandidates = (wardRes || []).filter(wr => wr.ward_id === w.id && wr.position === VIEW_POS).map(wr => {
-                const c = candMap[wr.candidate_code] || {};
-                return { code: wr.candidate_code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: wr.total_votes };
-            }).sort((a, b) => b.votes - a.votes);
-
-        const wTotal = wCandidates.reduce((sum, c) => sum + c.votes, 0);
-        const wLeader = wCandidates[0] || null;
-        return { wardId: w.id, wardName: w.name, candidates: wCandidates, leader: wLeader, totalVotes: wTotal, leaderPct: wTotal > 0 && wLeader ? ((wLeader.votes / wTotal) * 100).toFixed(1) : '0.0', streamsTotal: wStreams.length, streamsDone: reportedInWard };
-    });
-
-    const currentList = leaderboardByPos[VIEW_POS] || [];
-    const globalTotal = tabTotals[VIEW_POS] || 0;
+    // 5. Format Global Leaderboard
+    let leaderboard = (cands || []).map(c => ({
+      code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: totalByCand[c.code] || 0
+    })).sort((a,b) => b.votes - a.votes);
     
+    let globalTotal = leaderboard.reduce((s, c) => s + c.votes, 0);
+    leaderboard.forEach(c => c.pct = globalTotal > 0 ? ((c.votes/globalTotal)*100).toFixed(1) : '0.0');
+
     let ownRow = null; let ownRank = null;
     if (!USER.isSpectator && USER.name) {
-        const myIndex = currentList.findIndex(c => c.name.trim().toLowerCase() === USER.name.trim().toLowerCase());
-        if (myIndex !== -1) { ownRow = currentList[myIndex]; ownRank = myIndex + 1; }
+        const idx = leaderboard.findIndex(c => c.name.trim().toLowerCase() === USER.name.trim().toLowerCase());
+        if (idx !== -1) { ownRow = leaderboard[idx]; ownRank = idx + 1; }
     }
 
-    const leader = currentList[0] || null;
-    const runner = currentList[1] || null;
-    const margin = (leader && runner) ? (leader.votes - runner.votes) : (leader ? leader.votes : 0);
-
     OVERVIEW = {
-        viewingPosition: VIEW_POS, leaderboard: currentList, globalTotal, ownRow, ownRank, leader, runner, margin,
-        tabTotals, wards: formattedWards, 
-        reported: myResults.length, 
-        totalStreams: streamsData.length, 
-        ownPhoto: ownRow ? ownRow.photo_url : ''
+      viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
+      leader: leaderboard[0], runner: leaderboard[1], 
+      margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
+      consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
+      votesByConst, votesByWard, votesByCentre, candMap,
+      reported: (resultsData || []).length, totalStreams: (streamsData || []).length
     };
 
-    lastRefreshAt = Date.now();
-    updateTopMeta(); renderTabs(); renderHero(); renderDrillGrid(); renderBoard();
+    renderTabs(); renderHero(); renderDrillGrid(); renderBoard();
     setPulse('live');
-    document.getElementById('footTime').textContent = 'Updated ' + new Date().toLocaleTimeString();
-    saveSnapshot(VIEW_POS, currentList);
   } catch (err) {
     console.error(err); setPulse('stale'); if (!silent) toast('Connection error.', 'error');
   }
 }
+    
 
 async function loadDrill(silent) {
   try {
@@ -1005,31 +1006,93 @@ function renderBreadcrumb() {
 }
 
 function renderDrillGrid() {
-  renderBreadcrumb(); var el = document.getElementById('drillGrid'); var title = document.getElementById('drillTitle'); var sub = document.getElementById('drillSub'); var count = document.getElementById('drillCount');
+  var el = document.getElementById('drillGrid'); var title = document.getElementById('drillTitle'); var sub = document.getElementById('drillSub');
+  
+  // Breadcrumb logic (Simplified)
+  var bc = '';
+  if (DRILL_LEVEL === 'constituency') { bc = 'All Constituencies'; title.textContent = 'Constituency Breakdown'; }
+  else if (DRILL_LEVEL === 'ward') { bc = DRILL_CONST_NAME + ' Wards'; title.textContent = 'Ward Breakdown'; }
+  else if (DRILL_LEVEL === 'centre') { bc = DRILL_WARD_NAME + ' Centres'; title.textContent = 'Centre Breakdown'; }
+  document.getElementById('drillCount').textContent = ''; // Add count logic later if needed
 
-  if (!DRILL_WARD) {
-    title.textContent = OVERVIEW.viewingPosition === 'MCA' ? 'Ward Races' : 'Ward Breakdown';
-    sub.textContent = 'Vote share by ward · ' + OVERVIEW.viewingPosition;
-    var wards = OVERVIEW.wards || []; count.textContent = wards.length + ' wards';
-    if (!wards.length) { el.innerHTML = emptyGrid('No wards configured', ''); return; }
-    el.innerHTML = wards.map(renderWardCard).join(''); return;
+  // --- LEVEL 1: CONSTITUENCIES ---
+  if (DRILL_LEVEL === 'constituency') {
+    el.innerHTML = OVERVIEW.consts.map(c => {
+      var votes = OVERVIEW.votesByConst[c.id] || {};
+      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCandCode];
+      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      
+      var leaderHtml = topCand ? `
+        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
+        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
+      
+      return `<div class="card trailing" onclick="drillDown('ward', '${c.id}', '${c.name}')">
+        <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Constituency</div></div></div>
+        ${leaderHtml}
+      </div>`;
+    }).join('');
+    return;
   }
 
-  if (!DRILL_DATA) { el.innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>'; return; }
-
-  if (DRILL_DATA.level === 'centre') {
-    title.textContent = DRILL_WARD_NAME + ' Centres'; sub.textContent = 'Vote share by polling centre';
-    var cs = DRILL_DATA.centres || []; count.textContent = cs.length + ' centres';
-    if (!cs.length) { el.innerHTML = emptyGrid('No centres', ''); return; }
-    el.innerHTML = cs.map(renderCentreCard).join(''); return;
+  // --- LEVEL 2: WARDS ---
+  if (DRILL_LEVEL === 'ward') {
+    var myWards = OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID);
+    el.innerHTML = myWards.map(w => {
+      var votes = OVERVIEW.votesByWard[w.id] || {};
+      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCandCode];
+      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      
+      var leaderHtml = topCand ? `
+        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
+        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
+      
+      return `<div class="card trailing" onclick="drillDown('centre', '${w.id}', '${w.name}')">
+        <div class="card-head"><div><div class="card-name">${esc(w.name)}</div><div class="card-sub">Ward</div></div></div>
+        ${leaderHtml}
+      </div>`;
+    }).join('');
+    return;
   }
 
-  if (DRILL_DATA.level === 'stream') {
-    title.textContent = DRILL_CENTRE_NAME + ' Streams'; sub.textContent = 'Vote share by stream';
-    var ss = DRILL_DATA.streams || []; count.textContent = ss.length + ' streams';
-    if (!ss.length) { el.innerHTML = emptyGrid('No streams', ''); return; }
-    el.innerHTML = ss.map(renderStreamCard).join('');
+  // --- LEVEL 3: CENTRES ---
+  if (DRILL_LEVEL === 'centre') {
+    var myCentres = OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD);
+    el.innerHTML = myCentres.map(c => {
+      var votes = OVERVIEW.votesByCentre[c.id] || {};
+      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCandCode];
+      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      
+      var leaderHtml = topCand ? `
+        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
+        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
+      
+      return `<div class="card trailing">
+        <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Polling Centre</div></div></div>
+        ${leaderHtml}
+      </div>`;
+    }).join('');
+    return;
   }
+}
+
+// Global drill function
+function drillDown(level, id, name) {
+  if (level === 'ward') { DRILL_CONST_ID = id; DRILL_CONST_NAME = name; DRILL_LEVEL = 'ward'; }
+  if (level === 'centre') { DRILL_WARD = id; DRILL_WARD_NAME = name; DRILL_LEVEL = 'centre'; }
+  renderDrillGrid();
+  renderBoard(); // Update leaderboard for this scope!
 }
 
 function renderWardCard(w) {
@@ -1112,46 +1175,46 @@ function getScopedLeaderboard() {
 
 function renderBoard() {
   if (!OVERVIEW) return;
-  var el = document.getElementById('board'); var sub = document.getElementById('boardSub'); var count = document.getElementById('boardCount');
-  var heads = document.querySelectorAll('.section-head'); var boardHead = null; heads.forEach(function (h) { if (h.querySelector('#boardSub')) boardHead = h; });
+  var el = document.getElementById('board');
+  
+  // Figure out which candidates to show based on the Drill Level
+  var scopedCandidates = [];
+  var contextName = '';
 
-  if (OVERVIEW.viewingPosition === 'MCA' && !DRILL_WARD) { if (boardHead) boardHead.style.display = 'none'; el.style.display = 'none'; el.innerHTML = ''; return; }
-  var isDrilled = !!(DRILL_WARD || DRILL_CENTRE);
-
-  if (isDrilled) {
-    var scoped = getScopedLeaderboard();
-    if (boardHead) boardHead.style.display = ''; el.style.display = '';
-    if (!scoped) { sub.textContent = DRILL_CENTRE ? DRILL_CENTRE_NAME + ' · loading…' : DRILL_WARD_NAME + ' · loading…'; count.textContent = ''; el.innerHTML = '<div class="load" style="padding:30px;"><i class="fas fa-spinner"></i>Loading…</div>'; return; }
-    sub.textContent = scoped.context + ' · ' + OVERVIEW.viewingPosition;
-    count.textContent = scoped.candidates.length + ' candidates · ' + scoped.streamsDone + '/' + scoped.streamsTotal + ' streams';
-    if (!scoped.candidates.length) { el.innerHTML = '<div class="empty"><div class="empty-icon"><i class="fas fa-inbox"></i></div><div class="empty-title">No results in ' + esc(scoped.context) + ' yet</div><div class="empty-sub">Results will appear as agents submit tallies.</div></div>'; return; }
-    var sortedScope = scoped.candidates.slice().sort(function (a, b) { return b.votes - a.votes; });
-    el.innerHTML = sortedScope.map(function (c, idx) {
-      var rank = idx + 1; var pct = scoped.total > 0 ? (c.votes / scoped.total * 100) : 0; var cls = 'board-row';
-      if (rank === 1) cls += ' leader'; else if (rank === 2) cls += ' rank-2'; else if (rank === 3) cls += ' rank-3';
-      var isOwn = isOwnCandidate(c.name) && !USER.isSpectator; if (isOwn) cls += ' you';
-      var tintStyle = ''; if (!isOwn && rank !== 1 && c.color) { tintStyle = 'background:' + tintBg(c.color, 0.07) + ';'; }
-      var youPill = isOwn ? '<span class="board-you-pill">You</span>' : ''; var initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
-      var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
-      return '<div class="' + cls + '" style="' + tintStyle + '" onclick="openCandidateDetail(\'' + escAttr(c.code) + '\')"><div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + rank + '</span></div><div class="board-info"><div class="board-name">' + esc(c.name) + youPill + '</div><div class="board-party">' + esc(c.party) + '</div></div><div style="text-align:right;"><div class="board-votes">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + pct.toFixed(1) + '%</div></div><div><div class="board-share" style="margin-left:auto;"><div class="board-share-fill" style="width:' + pct.toFixed(1) + '%"></div></div></div></div>';
-    }).join('');
-    return;
+  if (DRILL_LEVEL === 'constituency') {
+    scopedCandidates = OVERVIEW.leaderboard;
+    contextName = 'Overall Constituency';
+  } else if (DRILL_LEVEL === 'ward') {
+    var votes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {};
+    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
+    contextName = DRILL_CONST_NAME;
+  } else if (DRILL_LEVEL === 'centre') {
+    var votes = OVERVIEW.votesByWard[DRILL_WARD] || {};
+    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
+    contextName = DRILL_WARD_NAME;
   }
 
-  if (boardHead) boardHead.style.display = ''; el.style.display = '';
-  sub.textContent = 'All candidates ranked · ' + OVERVIEW.viewingPosition; count.textContent = (OVERVIEW.leaderboard || []).length + ' candidates';
-  var lb = OVERVIEW.leaderboard || [];
-  if (!lb.length) { el.innerHTML = '<div class="empty"><div class="empty-icon"><i class="fas fa-ranking-star"></i></div><div class="empty-title">No candidates yet</div><div class="empty-sub">Results will appear here as agents submit.</div></div>'; return; }
-  var snapshot = getSnapshot(OVERVIEW.viewingPosition);
-  el.innerHTML = lb.map(function (c, idx) {
-    var rank = idx + 1; var cls = 'board-row';
-    if (rank === 1) cls += ' leader'; else if (rank === 2) cls += ' rank-2'; else if (rank === 3) cls += ' rank-3';
-    var isOwn = isOwnCandidate(c.name) && !USER.isSpectator; if (isOwn) cls += ' you';
-    var tintStyle = ''; if (!isOwn && rank !== 1 && c.color) { tintStyle = 'background:' + tintBg(c.color, 0.07) + ';'; }
-    var deltaHtml = ''; if (snapshot && snapshot[c.code] != null) { var d = c.votes - snapshot[c.code]; if (d > 0) deltaHtml = '<div class="board-delta up">' + d.toLocaleString() + '</div>'; else if (d < 0) deltaHtml = '<div class="board-delta down">' + Math.abs(d).toLocaleString() + '</div>'; else deltaHtml = '<div class="board-delta same">No change</div>'; }
-    var youPill = isOwn ? '<span class="board-you-pill">You</span>' : ''; var initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
-    var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
-    return '<div class="' + cls + '" style="' + tintStyle + '" onclick="openCandidateDetail(\'' + escAttr(c.code) + '\')"><div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + rank + '</span></div><div class="board-info"><div class="board-name">' + esc(c.name) + youPill + '</div><div class="board-party">' + esc(c.party) + '</div></div><div style="text-align:right;"><div class="board-votes">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + c.pct + '%</div>' + deltaHtml + '</div><div><div class="board-share" style="margin-left:auto;"><div class="board-share-fill" style="width:' + c.pct + '%"></div></div></div></div>';
+  var total = scopedCandidates.reduce((s,c)=>s+c.votes, 0);
+
+  if (!scopedCandidates.length) { el.innerHTML = '<div class="empty">No candidates.</div>'; return; }
+
+  el.innerHTML = scopedCandidates.map((c, idx) => {
+    var pct = total > 0 ? (c.votes/total*100) : 0;
+    var isYou = isOwnCandidate(c.name);
+    return `<div class="board-row ${idx===0?'leader':''} ${isYou?'you':''}" onclick="openCandidateDetail('${c.code}')">
+      <div class="avatar-wrap ${c.photo_url ? '' : 'no-photo'}">
+        ${c.photo_url ? `<img src="${c.photo_url}">` : c.name.charAt(0)}
+        <span class="avatar-rank">${idx+1}</span>
+      </div>
+      <div class="board-info">
+        <div class="board-name">${esc(c.name)} ${isYou ? '<span class="board-you-pill">You</span>' : ''}</div>
+        <div class="board-party">${esc(c.party)}</div>
+      </div>
+      <div style="text-align:right;">
+        <div class="board-votes">${c.votes.toLocaleString()}</div>
+        <div class="board-pct">${pct.toFixed(1)}%</div>
+      </div>
+    </div>`;
   }).join('');
 }
 
