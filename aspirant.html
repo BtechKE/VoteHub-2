@@ -697,32 +697,37 @@ async function loadOverview(silent) {
     const wardMap = {}; (wardsData || []).forEach(w => wardMap[w.id] = w);
 
     // 4. Aggregate Votes
-    const votesByCentre = {};
-    const votesByWard = {};
-    const votesByConst = {};
-    const totalByCand = {};
+const votesByCentre = {};
+const votesByWard = {};
+const votesByConst = {};
+const votesByStream = {}; // <--- ADD THIS
+const totalByCand = {};
 
-    (resultsData || []).forEach(r => {
-      const stream = streamMap[r.stream_code];
-      if (!stream) return; // Ignore results not in our scope
-      const centre = centreMap[stream.centre_id];
-      const ward = wardMap[centre.ward_id];
+(resultsData || []).forEach(r => {
+  const stream = streamMap[r.stream_code];
+  if (!stream) return; 
+  const centre = centreMap[stream.centre_id];
+  const ward = wardMap[centre.ward_id];
 
-      if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
-      totalByCand[r.candidate_code] += r.votes;
+  if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
+  totalByCand[r.candidate_code] += r.votes;
 
-      if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
-      if (!votesByCentre[centre.id][r.candidate_code]) votesByCentre[centre.id][r.candidate_code] = 0;
-      votesByCentre[centre.id][r.candidate_code] += r.votes;
+  if (!votesByStream[r.stream_code]) votesByStream[r.stream_code] = {}; // <--- ADD THIS
+  if (!votesByStream[r.stream_code][r.candidate_code]) votesByStream[r.stream_code][r.candidate_code] = 0; // <--- ADD THIS
+  votesByStream[r.stream_code][r.candidate_code] += r.votes; // <--- ADD THIS
 
-      if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
-      if (!votesByWard[ward.id][r.candidate_code]) votesByWard[ward.id][r.candidate_code] = 0;
-      votesByWard[ward.id][r.candidate_code] += r.votes;
+  if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
+  if (!votesByCentre[centre.id][r.candidate_code]) votesByCentre[centre.id][r.candidate_code] = 0;
+  votesByCentre[centre.id][r.candidate_code] += r.votes;
 
-      if (!votesByConst[ward.constituency_id]) votesByConst[ward.constituency_id] = {};
-      if (!votesByConst[ward.constituency_id][r.candidate_code]) votesByConst[ward.constituency_id][r.candidate_code] = 0;
-      votesByConst[ward.constituency_id][r.candidate_code] += r.votes;
-    });
+  if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
+  if (!votesByWard[ward.id][r.candidate_code]) votesByWard[ward.id][r.candidate_code] = 0;
+  votesByWard[ward.id][r.candidate_code] += r.votes;
+
+  if (!votesByConst[ward.constituency_id]) votesByConst[ward.constituency_id] = {};
+  if (!votesByConst[ward.constituency_id][r.candidate_code]) votesByConst[ward.constituency_id][r.candidate_code] = 0;
+  votesByConst[ward.constituency_id][r.candidate_code] += r.votes;
+});
 
     // 5. Format Global Leaderboard
     let leaderboard = (cands || []).map(c => ({
@@ -1006,28 +1011,32 @@ function renderBreadcrumb() {
 }
 
 function renderDrillGrid() {
-  var el = document.getElementById('drillGrid'); var title = document.getElementById('drillTitle'); var sub = document.getElementById('drillSub');
+  var el = document.getElementById('drillGrid');
+  var title = document.getElementById('drillTitle');
+  var sub = document.getElementById('drillSub');
+
+  // Titles
+  if (DRILL_LEVEL === 'constituency') { title.textContent = 'Constituency Breakdown'; sub.textContent = 'Vote share by constituency'; }
+  else if (DRILL_LEVEL === 'ward') { title.textContent = DRILL_CONST_NAME + ' Wards'; sub.textContent = 'Vote share by ward'; }
+  else if (DRILL_LEVEL === 'centre') { title.textContent = DRILL_WARD_NAME + ' Centres'; sub.textContent = 'Vote share by polling centre'; }
+  else if (DRILL_LEVEL === 'stream') { title.textContent = DRILL_CENTRE_NAME + ' Streams'; sub.textContent = 'Vote share by stream'; }
   
-  // Breadcrumb logic (Simplified)
-  var bc = '';
-  if (DRILL_LEVEL === 'constituency') { bc = 'All Constituencies'; title.textContent = 'Constituency Breakdown'; }
-  else if (DRILL_LEVEL === 'ward') { bc = DRILL_CONST_NAME + ' Wards'; title.textContent = 'Ward Breakdown'; }
-  else if (DRILL_LEVEL === 'centre') { bc = DRILL_WARD_NAME + ' Centres'; title.textContent = 'Centre Breakdown'; }
-  document.getElementById('drillCount').textContent = ''; // Add count logic later if needed
+  document.getElementById('drillCount').textContent = ''; 
+  renderBreadcrumb();
 
   // --- LEVEL 1: CONSTITUENCIES ---
   if (DRILL_LEVEL === 'constituency') {
     el.innerHTML = OVERVIEW.consts.map(c => {
       var votes = OVERVIEW.votesByConst[c.id] || {};
-      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCandCode];
-      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCode];
+      var total = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
       
       var leaderHtml = topCand ? `
         <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
         <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
       ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
       
       return `<div class="card trailing" onclick="drillDown('ward', '${c.id}', '${c.name}')">
@@ -1043,15 +1052,15 @@ function renderDrillGrid() {
     var myWards = OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID);
     el.innerHTML = myWards.map(w => {
       var votes = OVERVIEW.votesByWard[w.id] || {};
-      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCandCode];
-      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCode];
+      var total = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
       
       var leaderHtml = topCand ? `
         <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
         <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
       ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
       
       return `<div class="card trailing" onclick="drillDown('centre', '${w.id}', '${w.name}')">
@@ -1067,19 +1076,46 @@ function renderDrillGrid() {
     var myCentres = OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD);
     el.innerHTML = myCentres.map(c => {
       var votes = OVERVIEW.votesByCentre[c.id] || {};
-      var topCandCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCandCode];
-      var totalVotes = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = totalVotes > 0 && topCand ? ((votes[topCandCode]/totalVotes)*100).toFixed(1) : '0.0';
+      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCode];
+      var total = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
       
       var leaderHtml = topCand ? `
         <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
         <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCandCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
       ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
       
-      return `<div class="card trailing">
+      return `<div class="card trailing" onclick="drillDown('stream', '${c.id}', '${c.name}')">
         <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Polling Centre</div></div></div>
+        ${leaderHtml}
+      </div>`;
+    }).join('');
+    return;
+  }
+
+  // --- LEVEL 4: STREAMS ---
+  if (DRILL_LEVEL === 'stream') {
+    var myStreams = OVERVIEW.streams.filter(s => s.centre_id === DRILL_CENTRE);
+    if (!myStreams.length) { el.innerHTML = '<div class="empty">No streams configured for this centre.</div>'; return; }
+    
+    el.innerHTML = myStreams.map(s => {
+      var votes = OVERVIEW.votesByStream[s.code] || {};
+      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+      var topCand = OVERVIEW.candMap[topCode];
+      var total = Object.values(votes).reduce((s,v) => s+v, 0);
+      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
+      var streamLabel = 'STR ' + String(s.stream_number).padStart(2, '0');
+      
+      var leaderHtml = topCand ? `
+        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
+        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
+        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
+      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
+      
+      return `<div class="card trailing" onclick="openStreamDetail('${s.code}')">
+        <div class="card-head"><div><div class="card-name">${streamLabel}</div><div class="card-sub">${esc(s.code)}</div></div></div>
         ${leaderHtml}
       </div>`;
     }).join('');
@@ -1176,26 +1212,23 @@ function getScopedLeaderboard() {
 function renderBoard() {
   if (!OVERVIEW) return;
   var el = document.getElementById('board');
-  
-  // Figure out which candidates to show based on the Drill Level
   var scopedCandidates = [];
-  var contextName = '';
 
+  // Figure out which candidates to show based on the Drill Level
   if (DRILL_LEVEL === 'constituency') {
     scopedCandidates = OVERVIEW.leaderboard;
-    contextName = 'Overall Constituency';
   } else if (DRILL_LEVEL === 'ward') {
     var votes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {};
     scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
-    contextName = DRILL_CONST_NAME;
   } else if (DRILL_LEVEL === 'centre') {
     var votes = OVERVIEW.votesByWard[DRILL_WARD] || {};
     scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
-    contextName = DRILL_WARD_NAME;
+  } else if (DRILL_LEVEL === 'stream') {
+    var votes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {};
+    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
   }
 
   var total = scopedCandidates.reduce((s,c)=>s+c.votes, 0);
-
   if (!scopedCandidates.length) { el.innerHTML = '<div class="empty">No candidates.</div>'; return; }
 
   el.innerHTML = scopedCandidates.map((c, idx) => {
