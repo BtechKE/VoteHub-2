@@ -409,20 +409,29 @@
 <body>
 
 <!-- TOPBAR -->
-<div class="topbar-right">
-  <!-- NEW: Scope Selector for President/Spectator -->
-  <div id="nationalScopeWrap" style="display:none; align-items:center; gap:8px;">
-    <select id="aspCountySelector" onchange="switchAspCounty(this.value)" style="padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 12px; border: 1.5px solid rgba(26, 26, 25, 0.2); background: #1A1A19; color: #A5CF83; cursor: pointer;">
-      <option value="">Loading…</option>
-    </select>
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="pulse" id="topPulse"></span>
+    <div class="topbar-info">
+      <div class="topbar-name" id="topName">Loading…</div>
+      <div class="topbar-meta" id="topMeta">—</div>
+    </div>
   </div>
-  <!-- NEW: Locked Scope Label for Governor/MP/MCA -->
-  <div id="lockedScopeWrap" style="display:none; align-items:center; gap:6px; font-size:12px; font-weight:700; color:rgba(26,26,25,0.7); padding: 4px 10px; border-radius: 8px; background: rgba(26,26,25,0.08);">
-    <i class="fas fa-lock"></i> <span id="lockedScopeName">Scope</span>
-  </div>
+  <div class="topbar-right">
+    
+    <!-- National Dropdown (President/Spectator) -->
+    <div id="nationalScopeWrap" style="display:none; align-items:center; gap:8px;">
+      <select id="aspCountySelector" onchange="switchAspCounty(this.value)" style="padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 12px; border: 1.5px solid rgba(26, 26, 25, 0.2); background: #1A1A19; color: #A5CF83; cursor: pointer;">
+        <option value="">Loading…</option>
+      </select>
+    </div>
 
-  <button class="topbar-refresh" id="topRefresh" onclick="manualRefresh()" title="Refresh now">
-    <!-- ... existing refresh button ... -->
+    <!-- Locked Scope Badge (Governor/MP/MCA) -->
+    <div id="lockedScopeWrap" style="display:none; align-items:center; gap:6px; font-size:12px; font-weight:700; color:rgba(26,26,25,0.7); padding: 4px 10px; border-radius: 8px; background: rgba(26,26,25,0.08);">
+      <i class="fas fa-lock"></i> <span id="lockedScopeName">Scope</span>
+    </div>
+
+    <button class="topbar-refresh" id="topRefresh" onclick="manualRefresh()" title="Refresh now">
       <i class="fas fa-arrows-rotate" id="topRefreshIcon"></i>
     </button>
     <button class="topbar-logout" onclick="doLogout()">
@@ -529,14 +538,14 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 //  CONSTANTS & STATE
 // ================================================================
-var SCOPE_MODE = 'national'; // can be 'national', 'county', 'constituency', or 'ward'
-var CURRENT_COUNTY = ''; 
 var USER = null; var TOKEN = "supabase"; var OVERVIEW = null; var VIEW_POS = 'President';
 var CURRENT_VIEW = 'results'; var DRILL_WARD = ''; var DRILL_WARD_NAME = '';
 var DRILL_CENTRE = ''; var DRILL_CENTRE_NAME = ''; var DRILL_DATA = null;
 var TRACKER_DATA = null; var TRACKER_WARD = ''; var TRACKER_WARD_NAME = '';
 var TRACKER_CENTRE = ''; var TRACKER_CENTRE_NAME = '';
 var refreshTimer = null; var trackerRefreshAt = null; var lastRefreshAt = null;
+var SCOPE_MODE = 'national'; // can be 'national', 'county', 'constituency', or 'ward'
+var CURRENT_COUNTY = ''; 
 const POSITIONS = ['President', 'Governor', 'Senator', 'MP', 'Women Rep', 'MCA'];
 var POSITION_SHORT = { 'President': 'P', 'Governor': 'G', 'Senator': 'S', 'MP': 'M', 'Women Rep': 'W', 'MCA': 'C' };
 
@@ -550,19 +559,31 @@ async function init() {
   const { data: profile } = await db.from('aspirants').select('*').eq('auth_user_id', user.id).single();
   if (!profile) { alert("Profile not found"); doLogout(); return; }
   
+  // Build the USER object with ALL IDs
   USER = {
-    name: profile.name, position: profile.position, 
-    ward: profile.ward_id, constituency: profile.constituency_id, 
-    county: profile.county_id, loginCode: profile.login_code, isSpectator: profile.is_spectator
+    name: profile.name, 
+    position: profile.position, 
+    ward: profile.ward_id, 
+    constituency: profile.constituency_id, 
+    county: profile.county_id, 
+    loginCode: profile.login_code, 
+    isSpectator: profile.is_spectator
   };
 
+  console.log("LOGGED IN USER:", USER); // This will help us debug!
+
   document.getElementById('topName').textContent = USER.name || 'Viewer';
-  if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
+  
+  // Automatically set the VIEW_POS to their position (if not spectator)
+  if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { 
+    VIEW_POS = USER.position; 
+  }
 
   // --- SCOPE LOGIC ---
   if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
     document.getElementById('nationalScopeWrap').style.display = 'flex';
+    
     // Load all counties for the dropdown
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
@@ -589,13 +610,13 @@ async function init() {
   startAutoRefresh();
 }
 
-// Add this function right below init()
+// Add this right below init()
 function switchAspCounty(countyId) {
   CURRENT_COUNTY = countyId;
   toast('Switched view', 'info');
   loadOverview();
   if (CURRENT_VIEW === 'tracker') loadTracker();
-    }
+}
 
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
