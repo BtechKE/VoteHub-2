@@ -1987,11 +1987,19 @@ body::after {
      PAGE
 ============================================================ -->
 <div class="page">
+<div class="syscontrol">
+  
+  <!-- NEW: GLOBAL COUNTY SELECTOR -->
+  <div class="sys-group" style="flex: 1; min-width: 220px; border-right: 1px solid var(--border); padding-right: 16px; margin-right: 8px;">
+    <span class="sys-label" style="color: var(--primary-dark);"><i class="fas fa-map-marked-alt"></i> Active County</span>
+    <select id="globalCountySelector" onchange="switchCounty(this.value)" style="padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 14px; border: 2px solid var(--primary); background: var(--surface); color: var(--text); width: 100%; cursor: pointer;">
+      <option value="">Loading counties…</option>
+    </select>
+  </div>
 
-  <!-- SYSTEM CONTROL -->
-  <div class="syscontrol">
-    <div class="sys-group">
-      <span class="sys-label">Submission</span>
+  <div class="sys-group">
+    <span class="sys-label">Submission</span>
+    <!-- ... rest of your existing code ... -->
       <span class="status-pill" id="submissionPill">Checking…</span>
       <button class="btn-toggle" id="toggleSubmissionBtn" onclick="toggleSubmission()">
         <i class="fas fa-lock"></i> Toggle
@@ -2424,6 +2432,7 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 var COUNTIES = [], CONSTITUENCIES = [];
 var WARDS = [], CENTRES = [], STREAMS = [], CANDIDATES = [], AGENTS = [], ASPIRANTS = [];
+var CURRENT_COUNTY = ''; // <--- ADD THIS LINE
 var agentSelectedStreams = [];
 var CONFIG = {};
 var countdownTimer = null;
