@@ -364,6 +364,44 @@ body {
     
     .success-title { font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px; }
     .success-sub { font-size: 14px; color: #6B7C93; font-weight: 500; }
+    /* --- FORM UPLOAD PREMIUM UI --- */
+.action-sheet-option {
+  display: flex; align-items: center; gap: 16px; width: 100%;
+  padding: 16px; border-radius: 16px; border: 1px solid var(--border);
+  background: var(--surface); font-size: 15px; font-weight: 700; color: var(--text);
+  font-family: inherit; cursor: pointer; transition: all 0.15s ease;
+  margin-bottom: 10px; text-align: left;
+}
+.action-sheet-option:hover { background: var(--primary-tint); border-color: var(--primary); }
+.action-sheet-option i { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+.action-sheet-option.camera i { background: var(--primary-soft); color: var(--primary-dark); }
+.action-sheet-option.gallery i { background: var(--blue-soft); color: var(--blue); }
+
+.form-pending-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(184, 134, 11, 0.12); color: #b8860b;
+  padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  margin-top: 6px;
+}
+
+.form-attach-btn {
+  width: 100%; padding: 16px; border-radius: 14px; border: 2px dashed var(--border-strong);
+  background: var(--bg); color: var(--text-muted); font-size: 14px; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+  margin-top: 16px; transition: all 0.2s;
+}
+.form-attach-btn:hover { border-color: var(--primary); background: var(--primary-tint); color: var(--primary-dark); }
+
+.form-thumbnail-wrap {
+  margin-top: 16px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);
+  position: relative; cursor: pointer;
+}
+.form-thumbnail-wrap img { width: 100%; height: 120px; object-fit: cover; display: block; }
+.form-thumbnail-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 700; font-size: 13px; gap: 6px; backdrop-filter: blur(2px);
+}
   </style>
 </head>
 <body>
@@ -505,30 +543,46 @@ body {
     <div class="success-sub" id="successSub">Redirecting to the next position...</div>
   </div>
 </div>
-  <!-- FORM UPLOAD MODAL -->
-<div class="modal-bg" id="formUploadModal" style="z-index: 10005;">
-  <div class="modal" style="text-align: center;">
-    <div class="modal-icon" style="background: rgba(165, 207, 131, 0.2); color: #4A7C3A; font-size: 26px;">
-      <i class="fas fa-camera"></i>
+<!-- UPLOAD OPTIONS MODAL (Action Sheet) -->
+<div class="modal-bg" id="uploadOptionsModal" style="z-index: 10005;">
+  <div class="modal">
+    <div class="modal-icon" style="background: var(--primary-soft); color: var(--primary-dark);">
+      <i class="fas fa-file-image"></i>
     </div>
-    <div class="modal-title">Upload Form</div>
-    <div class="modal-body" id="formUploadBody">
-      Please take a clear photo of the statutory form for this position.
+    <div class="modal-title" id="uploadModalTitle">Attach Form</div>
+    <div class="modal-body" style="margin-bottom: 20px;">
+      Please provide a clear, portrait photo of the statutory form.
     </div>
     
-    <!-- File Input (Hidden) -->
-    <input type="file" id="formPhotoInput" accept="image/*" capture="environment" style="display: none;" onchange="handleFormUpload(event)">
-    
-    <!-- Preview Area -->
-    <div id="formPhotoPreviewWrap" style="display: none; margin: 15px 0;">
-      <img id="formPhotoPreview" style="width: 100%; max-height: 200px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border);">
-    </div>
+    <!-- Hidden Inputs -->
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleFormUpload(event)">
+    <input type="file" id="galleryInput" accept="image/*" style="display:none;" onchange="handleFormUpload(event)">
 
-    <div class="modal-actions" style="grid-template-columns: 1fr;">
-      <button class="btn btn-primary" id="openCameraBtn" onclick="document.getElementById('formPhotoInput').click()">
-        <i class="fas fa-camera"></i> Take Photo
+    <button class="action-sheet-option camera" onclick="document.getElementById('cameraInput').click()">
+      <i class="fas fa-camera"></i> Take Photo
+    </button>
+    <button class="action-sheet-option gallery" onclick="document.getElementById('galleryInput').click()">
+      <i class="fas fa-images"></i> Choose from Gallery
+    </button>
+    
+    <button class="btn btn-ghost" style="margin-top: 8px; width: 100%;" onclick="closeUploadModal()">Cancel</button>
+  </div>
+</div>
+
+<!-- FORM PREVIEW & UPLOAD MODAL -->
+<div class="modal-bg" id="formPreviewModal" style="z-index: 10006;">
+  <div class="modal">
+    <div class="modal-title">Confirm Upload</div>
+    <div id="previewImageWrap" style="margin: 16px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);">
+      <img id="previewImage" style="width: 100%; max-height: 250px; object-fit: contain; display: block; background: #000;">
+    </div>
+    <div id="uploadStatusText" style="font-size: 12px; text-align: center; color: var(--text-muted); margin-bottom: 16px;">Checking image quality...</div>
+    
+    <div class="modal-actions" style="grid-template-columns: 1fr 1fr;">
+      <button class="btn btn-ghost" onclick="retakePhoto()">Retake</button>
+      <button class="btn btn-primary" id="confirmUploadBtn" onclick="executeFormUpload()" disabled>
+        <i class="fas fa-cloud-upload-alt"></i> Upload
       </button>
-      <button class="btn btn-ghost" id="skipFormBtn" onclick="skipFormUpload()">Skip for now</button>
     </div>
   </div>
 </div>
@@ -615,16 +669,23 @@ async function loadStreams(silent) {
 
     if (resErr) throw resErr;
 
-    // 3. Map the data to our local STREAMS array
+    // 3. Fetch existing form photos for these streams
+    const { data: existingForms, error: formErr } = await db.from('form_photos')
+        .select('stream_code, position')
+        .in('stream_code', USER.assigned_streams || []);
+
+    if (formErr) throw formErr;
+
+    // 4. Map the data to our local STREAMS array
     STREAMS = (streamsData || []).map(s => ({
       code: s.code,
       centreId: s.centre_id,
       centreName: s.centres ? s.centres.name : 'Unknown Centre',
       streamNumber: s.stream_number,
-      wardId: s.ward_id // Critical for MCA candidates!
+      wardId: s.ward_id
     })).sort((a,b) => a.streamNumber - b.streamNumber);
 
-    // 4. Build the STATUSES object
+    // 5. Build the STATUSES object
     STATUSES = {};
     STREAMS.forEach(st => {
       STATUSES[st.code] = {};
@@ -634,14 +695,21 @@ async function loadStreams(silent) {
       });
     });
 
-    // 5. Render the UI
+    // 6. Build the FORMS object (Tracks which positions have photos)
+    window.FORMS = {};
+    (existingForms || []).forEach(f => {
+      if (!FORMS[f.stream_code]) FORMS[f.stream_code] = {};
+      FORMS[f.stream_code][f.position] = true;
+    });
+
+    // 7. Render the UI
     renderStreams();
 
   } catch (e) {
     console.error("Load Streams Error:", e);
     if (!silent) toast('Connection error.', 'error');
   } finally {
-    // 6. ALWAYS hide the loader when done (success or error)
+    // 8. ALWAYS hide the loader when done
     if (!silent) {
       document.getElementById('appLoader').classList.remove('active');
     }
@@ -718,8 +786,14 @@ function goToPositions(streamCode) {
     
     var metaHtml = '';
     if (isSubmitted) {
-      metaHtml = '<div class="position-meta"><i class="fas fa-check-circle" style="color:var(--success);"></i> Submitted</div>';
-    } else if (isLocked) {
+  var hasForm = FORMS[currentStream.code] && FORMS[currentStream.code][pos];
+  if (hasForm) {
+    metaHtml = '<div class="position-meta"><i class="fas fa-check-circle" style="color:var(--success);"></i> Submitted · <i class="fas fa-file-image" style="color:var(--success);"></i> Form Attached</div>';
+  } else {
+    metaHtml = '<div class="position-meta" style="flex-direction:column;align-items:flex-start;gap:4px;"><div><i class="fas fa-check-circle" style="color:var(--success);"></i> Submitted</div><div class="form-pending-badge"><i class="fas fa-exclamation-triangle"></i> Form Pending</div></div>';
+  }
+    }
+     else if (isLocked) {
       metaHtml = '<div class="position-meta"><i class="fas fa-lock"></i> Submission closed</div>';
     } else {
       metaHtml = '<div class="position-meta"><i class="fas fa-pen" style="color:var(--warning);"></i> Tap to enter results</div>';
@@ -945,6 +1019,23 @@ function advanceAfterSubmit(streamCode, position) {
 //  READ-ONLY VIEW
 // ================================================================
 async function goToReadonly(streamCode, position) {
+// Add this at the top of goToReadonly
+var hasForm = FORMS[currentStream.code] && FORMS[currentStream.code][currentPosition];
+var localPreview = localStorage.getItem('form_preview_' + currentStream.code + '_' + currentPosition);
+
+var formHtml = '';
+if (hasForm || localPreview) {
+  var imgSrc = localPreview || 'https://your-supabase-url.com/storage/v1/object/public/form-photos/' + currentStream.code + '_' + currentPosition.replace(/\s+/g, '') + '.jpg'; // We will refine the URL later
+  formHtml = `<div class="form-thumbnail-wrap" onclick="openUploadModal('${currentStream.code}', '${currentPosition}')">
+    <img src="${imgSrc}" alt="Form">
+    <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
+  </div>`;
+} else {
+  formHtml = `<button class="form-attach-btn" onclick="openUploadModal('${currentStream.code}', '${currentPosition}')">
+    <i class="fas fa-camera" style="font-size: 24px;"></i>
+    Attach Statutory Form
+  </button>`;
+}
   currentStream = STREAMS.find(s => s.code === streamCode);
   currentPosition = position;
   document.getElementById('roTitle').textContent = position;
@@ -994,7 +1085,7 @@ async function goToReadonly(streamCode, position) {
         '<div class="readonly-votes">' + r.votes.toLocaleString() + '</div></div>';
     });
     
-    document.getElementById('readonlyBody').innerHTML = html;
+    document.getElementById('readonlyBody').innerHTML = html + formHtml;
 
   } catch (err) {
     console.error("Readonly Error:", err);
@@ -1199,7 +1290,129 @@ function skipFormUpload() {
   document.getElementById('formUploadModal').classList.remove('active');
   toast('You can upload this form later from the position list.', 'info');
   advanceAfterSubmit(currentFormStream, currentFormPos);
-                                             }
+  }
+  // ================================================================
+//  FORM UPLOAD ENGINE
+// ================================================================
+var currentFormFile = null;
+var currentFormStream = '';
+var currentFormPos = '';
+
+function openUploadModal(streamCode, position) {
+  currentFormStream = streamCode;
+  currentFormPos = position;
+  document.getElementById('uploadModalTitle').textContent = 'Attach ' + position + ' Form';
+  
+  // Reset inputs (Fixes the camera cancel bug)
+  document.getElementById('cameraInput').value = '';
+  document.getElementById('galleryInput').value = '';
+  
+  document.getElementById('uploadOptionsModal').classList.add('active');
+}
+
+function closeUploadModal() {
+  document.getElementById('uploadOptionsModal').classList.remove('active');
+}
+
+async function handleFormUpload(event) {
+  var file = event.target.files[0];
+  if (!file) return; // User cancelled camera
+
+  closeUploadModal();
+
+  // 1. Validate File Type
+  if (!file.type.startsWith('image/')) {
+    toast('Invalid file. Please upload an image.', 'error');
+    return;
+  }
+
+  // 2. Validate File Size (5MB limit)
+  if (file.size > 5 * 1024 * 1024) {
+    toast('File is too large. Maximum size is 5MB.', 'error');
+    return;
+  }
+
+  // 3. Preview & Validate Aspect Ratio
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      // Portrait Check (Width must be less than Height)
+      if (img.width > img.height) {
+        toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
+        return;
+      }
+
+      currentFormFile = file;
+      
+      // Show Preview Modal
+      document.getElementById('previewImage').src = e.target.result;
+      document.getElementById('uploadStatusText').innerHTML = '<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Image looks good. Ready to upload.</span>';
+      document.getElementById('confirmUploadBtn').disabled = false;
+      document.getElementById('formPreviewModal').classList.add('active');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function retakePhoto() {
+  document.getElementById('formPreviewModal').classList.remove('active');
+  openUploadModal(currentFormStream, currentFormPos);
+}
+
+async function executeFormUpload() {
+  if (!currentFormFile) return;
+  
+  var btn = document.getElementById('confirmUploadBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing...';
+
+  try {
+    // 1. Compress Image to ~400KB
+    const options = { maxSizeMB: 0.4, maxWidthOrHeight: 1800, useWebWorker: true };
+    const compressedFile = await imageCompression(currentFormFile, options);
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+
+    // 2. Upload to Supabase Storage
+    var fileName = currentFormStream + '_' + currentFormPos.replace(/\s+/g, '') + '.jpg';
+    const { error: uploadError } = await db.storage
+      .from('form-photos')
+      .upload(fileName, compressedFile, { upsert: true }); // Overwrite if exists
+
+    if (uploadError) throw new Error(uploadError.message);
+
+    // 3. Save record to Database
+    const { error: dbError } = await db.from('form_photos').upsert({
+      stream_code: currentFormStream,
+      position: currentFormPos,
+      photo_url: fileName,
+      uploaded_by: USER.name
+    }, { onConflict: 'stream_code,position' });
+
+    if (dbError) throw new Error(dbError.message);
+
+    // 4. Save local preview for instant offline viewing
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
+    };
+    reader.readAsDataURL(compressedFile);
+
+    toast('Form uploaded securely!', 'success');
+    document.getElementById('formPreviewModal').classList.remove('active');
+    
+    // Refresh the positions list to show the green badge
+    goToPositions(currentFormStream);
+
+  } catch (err) {
+    console.error(err);
+    toast('Upload failed: ' + err.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Retry Upload';
+  }
+}
 function doLogout() {
   thConfirm({
     title: 'Sign out?',
