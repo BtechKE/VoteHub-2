@@ -997,12 +997,13 @@ function renderHero() {
     var isDrilledToWard = (DRILL_LEVEL === 'centre' || DRILL_LEVEL === 'stream');
     var targetWardId = DRILL_WARD || (SCOPE_MODE === 'ward' ? USER.ward : '');
 
-    // If we are drilled into a specific ward, show the MCA race
     if (isDrilledToWard && targetWardId) {
       var votes = OVERVIEW.votesByWard[targetWardId] || {};
       var cands = Object.keys(votes).map(code => ({ ...OVERVIEW.candMap[code], votes: votes[code] })).sort((a,b)=>b.votes-a.votes);
       var total = cands.reduce((s,c)=>s+c.votes, 0);
       var leader = cands[0];
+      var runner = cands[1];
+      var margin = (leader && runner) ? leader.votes - runner.votes : (leader ? leader.votes : 0);
       var wardName = OVERVIEW.wards.find(w=>w.id===targetWardId)?.name || 'Ward';
 
       if (!leader) {
@@ -1013,11 +1014,10 @@ function renderHero() {
       
       var pct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
       el.className = 'hero mca-hero other';
-      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MCA · ' + esc(wardName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num stat-info">' + total.toLocaleString() + '</div><div class="hero-stat-lbl">Total Ward Votes</div></div></div></div>';
+      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MCA · ' + esc(wardName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">+' + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div></div>';
       return;
     }
 
-    // Otherwise, show a summary of MCA races
     var contested = Object.keys(OVERVIEW.votesByWard).filter(w => Object.keys(OVERVIEW.votesByWard[w]).length > 0).length;
     el.className = 'hero mca-hero other';
     el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">MCA · Multi-Ward Race</div><div class="hero-name">' + contested + ' Ward Races</div><div class="hero-meta">Tap a ward below to view the specific MCA race</div></div>';
@@ -1029,12 +1029,13 @@ function renderHero() {
     var isDrilledToConst = (DRILL_LEVEL !== 'constituency');
     var targetConstId = DRILL_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
 
-    // If we are drilled into a specific constituency, show the MP race
     if (isDrilledToConst && targetConstId) {
       var votes = OVERVIEW.votesByConst[targetConstId] || {};
       var cands = Object.keys(votes).map(code => ({ ...OVERVIEW.candMap[code], votes: votes[code] })).sort((a,b)=>b.votes-a.votes);
       var total = cands.reduce((s,c)=>s+c.votes, 0);
       var leader = cands[0];
+      var runner = cands[1];
+      var margin = (leader && runner) ? leader.votes - runner.votes : (leader ? leader.votes : 0);
       var constName = OVERVIEW.consts.find(c=>c.id===targetConstId)?.name || 'Constituency';
 
       if (!leader) {
@@ -1045,11 +1046,10 @@ function renderHero() {
       
       var pct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
       el.className = 'hero other';
-      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MP · ' + esc(constName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num stat-info">' + total.toLocaleString() + '</div><div class="hero-stat-lbl">Total Const Votes</div></div></div></div>';
+      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MP · ' + esc(constName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">+' + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div></div>';
       return;
     }
 
-    // Otherwise, show a summary of MP races (for a Governor looking at MP tab)
     var contested = Object.keys(OVERVIEW.votesByConst).filter(c => Object.keys(OVERVIEW.votesByConst[c]).length > 0).length;
     el.className = 'hero other';
     el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">MP · Multi-Constituency Race</div><div class="hero-name">' + contested + ' Constituency Races</div><div class="hero-meta">Tap a constituency below to view the specific MP race</div></div>';
@@ -1057,7 +1057,6 @@ function renderHero() {
   }
 
   // --- 3. HANDLE COUNTY-WIDE POSITIONS (President, Governor, Senator, Women Rep) ---
-  // These always show the candidate leading in the currently drilled area
   var scopedVotes = {};
   var scopeLabel = '';
   
@@ -1082,9 +1081,8 @@ function renderHero() {
   var focusPct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
   
   el.className = 'hero' + (isOwn ? '' : ' other');
-  el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">' + esc(OVERVIEW.viewingPosition) + ' · ' + esc(scopeLabel) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + focusPct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">' + (margin > 0 ? '+' : '') + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div></div>';
-    }
-
+  el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">' + esc(OVERVIEW.viewingPosition) + ' · ' + esc(scopeLabel) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + focusPct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">+' + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div></div>';
+}
 // ================================================================
 //  RENDERING — BREADCRUMB & DRILL GRID
 // ================================================================
