@@ -1020,24 +1020,27 @@ function advanceAfterSubmit(streamCode, position) {
 //  READ-ONLY VIEW
 // ================================================================
 async function goToReadonly(streamCode, position) {
-// Add this at the top of goToReadonly
-var hasForm = FORMS[currentStream.code] && FORMS[currentStream.code][currentPosition];
-var localPreview = localStorage.getItem('form_preview_' + currentStream.code + '_' + currentPosition);
+  var stream = STREAMS.find(s => s.code === streamCode);
+  
+  // FIX: Use the passed streamCode and position safely
+  var hasForm = FORMS[streamCode] && FORMS[streamCode][position];
+  var localPreview = localStorage.getItem('form_preview_' + streamCode + '_' + position);
+  
+  var formHtml = '';
+  if (hasForm || localPreview) {
+    var imgSrc = localPreview || `https://qkkhtglsstinsvbdmclt.supabase.co/storage/v1/object/public/form-photos/${streamCode}_${position.replace(/\s+/g, '')}.jpg`; 
+    formHtml = `<div class="form-thumbnail-wrap" onclick="openUploadModal('${streamCode}', '${position}')">
+      <img src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
+      <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
+    </div>`;
+  } else {
+    formHtml = `<button class="form-attach-btn" onclick="openUploadModal('${streamCode}', '${position}')">
+      <i class="fas fa-camera" style="font-size: 24px;"></i>
+      Attach Statutory Form
+    </button>`;
+  }
 
-var formHtml = '';
-if (hasForm || localPreview) {
-  var imgSrc = localPreview || 'https://your-supabase-url.com/storage/v1/object/public/form-photos/' + currentStream.code + '_' + currentPosition.replace(/\s+/g, '') + '.jpg'; // We will refine the URL later
-  formHtml = `<div class="form-thumbnail-wrap" onclick="openUploadModal('${currentStream.code}', '${currentPosition}')">
-    <img src="${imgSrc}" alt="Form">
-    <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
-  </div>`;
-} else {
-  formHtml = `<button class="form-attach-btn" onclick="openUploadModal('${currentStream.code}', '${currentPosition}')">
-    <i class="fas fa-camera" style="font-size: 24px;"></i>
-    Attach Statutory Form
-  </button>`;
-}
-  currentStream = STREAMS.find(s => s.code === streamCode);
+  currentStream = stream;
   currentPosition = position;
   document.getElementById('roTitle').textContent = position;
   document.getElementById('roSub').textContent = currentStream ? currentStream.centreName : '';
@@ -1064,12 +1067,9 @@ if (hasForm || localPreview) {
     
     data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
       var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-      
-      // Safety check: ensure candidate data actually exists
       var candName = r.candidates ? r.candidates.name : 'Unknown';
       var candParty = r.candidates ? r.candidates.party : '';
       var rawPhoto = r.candidates ? r.candidates.photo_url : '';
-      
       var initial = candName.charAt(0).toUpperCase();
       var photoUrl = normalizeImageUrl(rawPhoto);
       
@@ -1090,11 +1090,9 @@ if (hasForm || localPreview) {
 
   } catch (err) {
     console.error("Readonly Error:", err);
-    // If something fails, show the error on the screen instead of a spinning wheel
     document.getElementById('readonlyBody').innerHTML = '<div class="empty-state"><div class="title">Error loading results</div><div class="sub">' + esc(err.message) + '</div></div>';
   }
-      }
-
+}
 // ================================================================
 //  UTILS & UI HELPERS
 // ================================================================
@@ -1179,119 +1177,7 @@ function thConfirm(opts) {
     setTimeout(function () { var ok = wrap.querySelector('[data-act="ok"]'); if (ok) ok.focus(); }, 60);
   });
 }
-  // ================================================================
-//  FORM UPLOAD LOGIC
-// ================================================================
-var currentFormFile = null;
-var currentFormStream = '';
-var currentFormPos = '';
-
-function promptFormUpload(streamCode, position) {
-  currentFormStream = streamCode;
-  currentFormPos = position;
-  currentFormFile = null;
   
-  document.getElementById('formUploadBody').innerHTML = 'Please take a clear photo of the statutory form for <strong>' + position + '</strong>.';
-  document.getElementById('formPhotoPreviewWrap').style.display = 'none';
-  document.getElementById('openCameraBtn').innerHTML = '<i class="fas fa-camera"></i> Take Photo';
-  document.getElementById('openCameraBtn').disabled = false;
-  document.getElementById('skipFormBtn').style.display = 'block';
-  
-  document.getElementById('formUploadModal').classList.add('active');
-}
-
-async function handleFormUpload(event) {
-  var file = event.target.files[0];
-  if (!file) return;
-
-  // 1. Validate File Type
-  if (!file.type.startsWith('image/')) {
-    toast('Invalid file. Please upload an image (JPG/PNG).', 'error');
-    event.target.value = ''; // Reset input
-    return;
-  }
-
-  // 2. Validate File Size (5MB limit)
-  if (file.size > 5 * 1024 * 1024) {
-    toast('File is too large. Maximum size is 5MB.', 'error');
-    event.target.value = '';
-    return;
-  }
-
-  // 3. Show Preview
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    document.getElementById('formPhotoPreview').src = e.target.result;
-    document.getElementById('formPhotoPreviewWrap').style.display = 'block';
-    
-    // Save to local storage for offline viewing later
-    localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
-  };
-  reader.readAsDataURL(file);
-
-  currentFormFile = file;
-  
-  // Change button to Upload
-  var btn = document.getElementById('openCameraBtn');
-  btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Upload & Save';
-  btn.disabled = false;
-  btn.onclick = executeFormUpload;
-  
-  document.getElementById('skipFormBtn').style.display = 'none';
-}
-
-async function executeFormUpload() {
-  if (!currentFormFile) return;
-  
-  var btn = document.getElementById('openCameraBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing & Uploading...';
-
-  try {
-    // 1. Compress the Image (Max 400KB, 1800px)
-    const options = { maxSizeMB: 0.4, maxWidthOrHeight: 1800, useWebWorker: true };
-    const compressedFile = await imageCompression(currentFormFile, options);
-
-    // 2. Upload to Supabase Storage
-    var fileName = currentFormStream + '_' + currentFormPos.replace(/\s+/g, '') + '_' + Date.now() + '.jpg';
-    const { data: uploadData, error: uploadError } = await db.storage
-      .from('form-photos')
-      .upload(fileName, compressedFile);
-
-    if (uploadError) throw new Error(uploadError.message);
-
-    // 3. Get Public URL (We use a temporary public URL, but we will use the private one in the DB)
-    const { data: urlData } = db.storage.from('form-photos').getPublicUrl(fileName);
-    
-    // 4. Save to Database table
-    const { error: dbError } = await db.from('form_photos').upsert({
-      stream_code: currentFormStream,
-      position: currentFormPos,
-      photo_url: fileName, // We save the file path, not the full URL for security
-      uploaded_by: USER.name
-    }, { onConflict: 'stream_code,position' });
-
-    if (dbError) throw new Error(dbError.message);
-
-    toast('Form uploaded successfully!', 'success');
-    document.getElementById('formUploadModal').classList.remove('active');
-    
-    // Advance to next position
-    advanceAfterSubmit(currentFormStream, currentFormPos);
-
-  } catch (err) {
-    console.error(err);
-    toast('Upload failed: ' + err.message, 'error');
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Retry Upload';
-  }
-}
-
-function skipFormUpload() {
-  document.getElementById('formUploadModal').classList.remove('active');
-  toast('You can upload this form later from the position list.', 'info');
-  advanceAfterSubmit(currentFormStream, currentFormPos);
-  }
   // ================================================================
 //  FORM UPLOAD ENGINE
 // ================================================================
