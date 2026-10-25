@@ -1026,9 +1026,11 @@ async function goToReadonly(streamCode, position) {
   formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
     <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
     <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
-  </div>`;
+  </div>
+  <button class="btn btn-ghost" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px;" onclick="openUploadModal('${streamCode}', '${position}')">
+    <i class="fas fa-sync-alt"></i> Replace Photo
+  </button>`;
   
-  // If no local preview (new device), fetch a secure URL just for the thumbnail
   if (!localPreview && hasForm) {
     db.storage.from('form-photos').createSignedUrl(streamCode + '_' + position.replace(/\s+/g, '') + '.jpg', 600).then(({data}) => {
        if (data) {
@@ -1284,20 +1286,24 @@ async function executeFormUpload() {
 
     if (dbError) throw new Error(dbError.message);
 
-    // 4. Save local preview for instant offline viewing
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
-    };
-    reader.readAsDataURL(compressedFile);
+      // 4. Save local preview for instant offline viewing
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
+  };
+  reader.readAsDataURL(compressedFile);
 
-    toast('Form uploaded securely!', 'success');
-    document.getElementById('formPreviewModal').classList.remove('active');
-    
-    // Refresh the positions list to show the green badge
-    goToPositions(currentFormStream);
+  // 5. Update the FORMS state so the badge turns green
+  if (!FORMS[currentFormStream]) FORMS[currentFormStream] = {};
+  FORMS[currentFormStream][currentFormPos] = true;
 
-  } catch (err) {
+  toast('Form uploaded securely!', 'success');
+  document.getElementById('formPreviewModal').classList.remove('active');
+  
+  // 6. Go straight back to the Read-Only screen to see the new photo
+  goToReadonly(currentFormStream, currentFormPos);
+
+} catch (err) {
     console.error(err);
     toast('Upload failed: ' + err.message, 'error');
     btn.disabled = false;
