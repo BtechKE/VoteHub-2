@@ -1027,9 +1027,9 @@ async function goToReadonly(streamCode, position) {
     <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
     <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
   </div>
-  <button class="btn btn-ghost" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px;" onclick="openUploadModal('${streamCode}', '${position}')">
-    <i class="fas fa-sync-alt"></i> Replace Photo
-  </button>`;
+  <button class="btn" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px; background: var(--primary) !important; color: var(--text) !important; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);" onclick="openUploadModal('${streamCode}', '${position}')">
+  <i class="fas fa-sync-alt"></i> Replace Photo
+</button>`;
   
   if (!localPreview && hasForm) {
     db.storage.from('form-photos').createSignedUrl(streamCode + '_' + position.replace(/\s+/g, '') + '.jpg', 600).then(({data}) => {
