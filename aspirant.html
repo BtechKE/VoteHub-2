@@ -953,17 +953,34 @@ function updateTopMeta() {
 function renderTabs() {
   var el = document.getElementById('posTabs'); if (!OVERVIEW) return;
   var ownPos = (!USER.isSpectator && USER.position) ? USER.position : '';
-  var mcaContested = (OVERVIEW.wards || []).filter(function (w) { return w.candidates && w.candidates.length > 0; }).length;
+  
+  // FIX: Calculate contested wards using the new data structure
+  var mcaContested = 0;
+  if (OVERVIEW.votesByWard) {
+    var wIdsWithVotes = Object.keys(OVERVIEW.votesByWard);
+    mcaContested = wIdsWithVotes.filter(wId => Object.keys(OVERVIEW.votesByWard[wId]).length > 0).length;
+  }
+
   el.innerHTML = POSITIONS.map(function (p) {
     var cls = 'postab' + (p === VIEW_POS ? ' active' : '') + (p === ownPos ? ' mine' : '');
-    var pillText = (p === 'MCA') ? mcaContested + ' ward' + (mcaContested === 1 ? '' : 's') : ((OVERVIEW.tabTotals && OVERVIEW.tabTotals[p]) || 0).toLocaleString();
+    var pillText = (p === 'MCA') ? mcaContested + ' wards' : ((OVERVIEW.tabTotals && OVERVIEW.tabTotals[p]) || 0).toLocaleString();
     return '<button class="' + cls + '" data-pos="' + escAttr(p) + '" onclick="switchPosition(\'' + escAttr(p) + '\')">' + esc(p) + '<span class="pill">' + pillText + '</span></button>';
   }).join('');
 }
 
 function switchPosition(pos) {
   if (pos === VIEW_POS) return;
-  VIEW_POS = pos; DRILL_WARD = ''; DRILL_WARD_NAME = ''; DRILL_CENTRE = ''; DRILL_CENTRE_NAME = ''; DRILL_DATA = null;
+  VIEW_POS = pos; 
+  DRILL_WARD = ''; DRILL_WARD_NAME = ''; 
+  DRILL_CENTRE = ''; DRILL_CENTRE_NAME = ''; 
+  DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
+  DRILL_DATA = null;
+  
+  // Reset to base level for this scope
+  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') DRILL_LEVEL = 'constituency';
+  else if (SCOPE_MODE === 'constituency') DRILL_LEVEL = 'ward';
+  else if (SCOPE_MODE === 'ward') DRILL_LEVEL = 'centre';
+
   renderTabs();
   document.getElementById('heroCard').innerHTML = '<div class="hero-inner"><div class="load" style="color:#F0F0F0;"><i class="fas fa-spinner" style="color:#A5CF83;"></i>Loading…</div></div>';
   document.getElementById('drillGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>';
@@ -972,77 +989,101 @@ function switchPosition(pos) {
 
 function renderHero() {
   if (!OVERVIEW) return;
-  var el = document.getElementById('heroCard'); var liveText = timeAgo(lastRefreshAt);
+  var el = document.getElementById('heroCard'); 
+  var liveText = timeAgo(lastRefreshAt);
 
+  // --- 1. HANDLE MCA (Ward Scope) ---
   if (OVERVIEW.viewingPosition === 'MCA') {
-    if (DRILL_WARD) {
-      var ward = (OVERVIEW.wards || []).filter(function (w) { return w.wardId === DRILL_WARD; })[0];
-      if (!ward) { el.className = 'hero other'; el.innerHTML = '<div class="hero-inner"><div class="empty" style="padding:20px 0;"><div class="empty-title">Ward not found</div></div></div>'; return; }
-      var focusScope = ward; var focusScopeLabel = ward.wardName + ' Ward';
-      if (DRILL_CENTRE && DRILL_DATA && DRILL_DATA.level === 'stream') {
-        var centreCandidates = {};
-        (DRILL_DATA.streams || []).forEach(function (s) { (s.candidates || []).forEach(function (c) { if (!centreCandidates[c.code]) { centreCandidates[c.code] = { code: c.code, name: c.name, party: c.party, photo_url: c.photo_url || '', votes: 0 }; } centreCandidates[c.code].votes += c.votes; }); });
-        var arr = Object.keys(centreCandidates).map(function (k) { return centreCandidates[k]; }); arr.sort(function (x, y) { return y.votes - x.votes; });
-        var totalC = arr.reduce(function (s, c) { return s + c.votes; }, 0);
-        if (arr.length) {
-          focusScope = { wardName: DRILL_CENTRE_NAME, candidates: arr, totalVotes: totalC, leader: arr[0], leaderPct: totalC > 0 ? (arr[0].votes / totalC * 100).toFixed(1) : '0.0', streamsDone: (DRILL_DATA.streams || []).filter(function (s) { return s.submitted; }).length, streamsTotal: (DRILL_DATA.streams || []).length };
-          focusScopeLabel = DRILL_CENTRE_NAME + ' Centre';
-        }
-      }
-      if (!focusScope.leader) {
-        el.className = 'hero mca-hero other';
-        el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><span class="hero-rank">' + esc(focusScopeLabel) + '</span></div><div class="hero-eyebrow">MCA · ' + esc(focusScopeLabel) + '</div><div class="hero-name">No results yet</div><div class="hero-meta">Waiting for agent submissions</div></div>';
+    var isDrilledToWard = (DRILL_LEVEL === 'centre' || DRILL_LEVEL === 'stream');
+    var targetWardId = DRILL_WARD || (SCOPE_MODE === 'ward' ? USER.ward : '');
+
+    // If we are drilled into a specific ward, show the MCA race
+    if (isDrilledToWard && targetWardId) {
+      var votes = OVERVIEW.votesByWard[targetWardId] || {};
+      var cands = Object.keys(votes).map(code => ({ ...OVERVIEW.candMap[code], votes: votes[code] })).sort((a,b)=>b.votes-a.votes);
+      var total = cands.reduce((s,c)=>s+c.votes, 0);
+      var leader = cands[0];
+      var wardName = OVERVIEW.wards.find(w=>w.id===targetWardId)?.name || 'Ward';
+
+      if (!leader) {
+        el.className = 'hero other';
+        el.innerHTML = '<div class="hero-inner"><div class="empty" style="padding:20px 0;"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">No results in ' + esc(wardName) + '</div></div></div>';
         return;
       }
-      var leader = focusScope.leader; var runner = focusScope.candidates[1]; var margin = runner ? (leader.votes - runner.votes) : leader.votes;
-      var leaderInitial = leader.name ? leader.name.charAt(0).toUpperCase() : '?';
-      var leaderPhotoHtml = leader.photo_url ? '<img src="' + escAttr(leader.photo_url) + '" alt="" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(leaderInitial) + '\'">' : '';
+      
+      var pct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
       el.className = 'hero mca-hero other';
-      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span><span class="hero-rank">1 / ' + focusScope.candidates.length + '</span></div></div><div class="hero-name-row"><div class="hero-avatar' + (leader.photo_url ? '' : ' no-photo') + '">' + (leader.photo_url ? leaderPhotoHtml : leaderInitial) + '</div><div><div class="hero-eyebrow">MCA · ' + esc(focusScopeLabel) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + focusScope.leaderPct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">+' + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div><div class="hero-share"><div class="hero-share-track"><div class="hero-share-bar" style="width:' + focusScope.leaderPct + '%"></div></div><div class="hero-share-legend"><span>' + focusScope.streamsDone + ' of ' + focusScope.streamsTotal + ' streams reported</span><span>' + focusScope.totalVotes.toLocaleString() + ' votes in ' + esc(focusScopeLabel) + '</span></div></div></div>';
+      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MCA · ' + esc(wardName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num stat-info">' + total.toLocaleString() + '</div><div class="hero-stat-lbl">Total Ward Votes</div></div></div></div>';
       return;
     }
-    if (!USER.isSpectator && USER.position === 'MCA' && USER.ward) {
-      var ownWard = (OVERVIEW.wards || []).filter(function (w) { return w.wardId === USER.ward; })[0];
-      if (ownWard && ownWard.candidates.length) {
-        var theirRow = ownWard.candidates.filter(function (c) { return String(c.name).toLowerCase().trim() === String(USER.name).toLowerCase().trim(); })[0];
-        var rk = theirRow ? ownWard.candidates.indexOf(theirRow) + 1 : null;
-        var isLeading = rk === 1 && theirRow && theirRow.votes > 0;
-        var ownPhoto = OVERVIEW.ownPhoto || (theirRow ? theirRow.photo_url : '') || ''; var ownInitial = USER.name ? USER.name.charAt(0).toUpperCase() : '?';
-        var ownPhotoHtml = ownPhoto ? '<img src="' + escAttr(ownPhoto) + '" alt="" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(ownInitial) + '\'">' : '';
-        el.className = 'hero mca-hero';
-        el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status ' + (isLeading ? 'leading' : 'trailing') + '">' + (isLeading ? '<i class="fas fa-crown"></i> Leading' : 'Rank #' + rk) + '</span><span class="hero-rank">' + ownWard.candidates.length + ' in race</span></div></div><div class="hero-name-row"><div class="hero-avatar' + (ownPhoto ? '' : ' no-photo') + '">' + (ownPhoto ? ownPhotoHtml : ownInitial) + '</div><div><div class="hero-eyebrow">Your Ward · ' + esc(ownWard.wardName) + '</div><div class="hero-name">' + esc(USER.name) + '</div><div class="hero-meta">MCA · ' + esc(ownWard.wardName) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + (theirRow ? theirRow.votes.toLocaleString() : '0') + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + ownWard.leaderPct + '%</div><div class="hero-stat-lbl">Ward Leader</div></div><div><div class="hero-stat-num stat-info">' + ownWard.candidates.length + '</div><div class="hero-stat-lbl">Candidates</div></div></div><div class="hero-share"><div class="hero-share-legend"><span>Tap a ward below to see its race</span><span>' + OVERVIEW.reported + ' of ' + OVERVIEW.totalStreams + ' streams reported</span></div></div></div>';
+
+    // Otherwise, show a summary of MCA races
+    var contested = Object.keys(OVERVIEW.votesByWard).filter(w => Object.keys(OVERVIEW.votesByWard[w]).length > 0).length;
+    el.className = 'hero mca-hero other';
+    el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">MCA · Multi-Ward Race</div><div class="hero-name">' + contested + ' Ward Races</div><div class="hero-meta">Tap a ward below to view the specific MCA race</div></div>';
+    return;
+  }
+
+  // --- 2. HANDLE MP (Constituency Scope) ---
+  if (OVERVIEW.viewingPosition === 'MP') {
+    var isDrilledToConst = (DRILL_LEVEL !== 'constituency');
+    var targetConstId = DRILL_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+
+    // If we are drilled into a specific constituency, show the MP race
+    if (isDrilledToConst && targetConstId) {
+      var votes = OVERVIEW.votesByConst[targetConstId] || {};
+      var cands = Object.keys(votes).map(code => ({ ...OVERVIEW.candMap[code], votes: votes[code] })).sort((a,b)=>b.votes-a.votes);
+      var total = cands.reduce((s,c)=>s+c.votes, 0);
+      var leader = cands[0];
+      var constName = OVERVIEW.consts.find(c=>c.id===targetConstId)?.name || 'Constituency';
+
+      if (!leader) {
+        el.className = 'hero other';
+        el.innerHTML = '<div class="hero-inner"><div class="empty" style="padding:20px 0;"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">No results in ' + esc(constName) + '</div></div></div>';
         return;
       }
+      
+      var pct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
+      el.className = 'hero other';
+      el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">MP · ' + esc(constName) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + pct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num stat-info">' + total.toLocaleString() + '</div><div class="hero-stat-lbl">Total Const Votes</div></div></div></div>';
+      return;
     }
-    var contested = (OVERVIEW.wards || []).filter(function (w) { return w.candidates.length > 0; });
-    var totalCands = (OVERVIEW.wards || []).reduce(function (s, w) { return s + w.candidates.length; }, 0);
-    var totalVotes = (OVERVIEW.wards || []).reduce(function (s, w) { return s + w.totalVotes; }, 0);
-    el.className = 'hero mca-hero other';
-    el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">MCA · Multi-Ward Race</div><div class="hero-name">' + contested.length + ' Ward ' + (contested.length === 1 ? 'Race' : 'Races') + '</div><div class="hero-meta">Each ward elects its own MCA · tap a ward below to see its race</div><div class="hero-stats"><div><div class="hero-stat-num">' + totalCands + '</div><div class="hero-stat-lbl">Candidates</div></div><div><div class="hero-stat-num blue">' + contested.length + '/' + (OVERVIEW.wards || []).length + '</div><div class="hero-stat-lbl">Contested</div></div><div><div class="hero-stat-num stat-info">' + totalVotes.toLocaleString() + '</div><div class="hero-stat-lbl">Total Votes</div></div></div></div>';
+
+    // Otherwise, show a summary of MP races (for a Governor looking at MP tab)
+    var contested = Object.keys(OVERVIEW.votesByConst).filter(c => Object.keys(OVERVIEW.votesByConst[c]).length > 0).length;
+    el.className = 'hero other';
+    el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">MP · Multi-Constituency Race</div><div class="hero-name">' + contested + ' Constituency Races</div><div class="hero-meta">Tap a constituency below to view the specific MP race</div></div>';
+    return;
+  }
+
+  // --- 3. HANDLE COUNTY-WIDE POSITIONS (President, Governor, Senator, Women Rep) ---
+  // These always show the candidate leading in the currently drilled area
+  var scopedVotes = {};
+  var scopeLabel = '';
+  
+  if (DRILL_LEVEL === 'constituency') { scopedVotes = {}; var keys = Object.keys(OVERVIEW.votesByConst); keys.forEach(k => { for (let c in OVERVIEW.votesByConst[k]) { scopedVotes[c] = (scopedVotes[c]||0) + OVERVIEW.votesByConst[k][c]; } }); scopeLabel = 'Overall'; }
+  else if (DRILL_LEVEL === 'ward') { scopedVotes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {}; scopeLabel = DRILL_CONST_NAME; }
+  else if (DRILL_LEVEL === 'centre') { scopedVotes = OVERVIEW.votesByWard[DRILL_WARD] || {}; scopeLabel = DRILL_WARD_NAME; }
+  else if (DRILL_LEVEL === 'stream') { scopedVotes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {}; scopeLabel = DRILL_CENTRE_NAME; }
+
+  var cands = Object.keys(scopedVotes).map(code => ({ ...OVERVIEW.candMap[code], votes: scopedVotes[code] })).sort((a,b)=>b.votes-a.votes);
+  var total = cands.reduce((s,c)=>s+c.votes, 0);
+  var leader = cands[0];
+  var runner = cands[1];
+  var margin = (leader && runner) ? leader.votes - runner.votes : (leader ? leader.votes : 0);
+
+  if (!leader) {
+    el.className = 'hero other';
+    el.innerHTML = '<div class="hero-inner"><div class="empty" style="padding:20px 0;"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">No results in ' + esc(scopeLabel) + '</div></div></div>';
     return;
   }
 
   var isOwn = (!USER.isSpectator && OVERVIEW.viewingPosition === USER.position);
-  var lb = OVERVIEW.leaderboard || []; var globalTotal = OVERVIEW.globalTotal || 0;
-  var focusName, focusParty, focusVotes, focusPct, focusRank, statusLabel, statusClass, focusPhoto;
-
-  if (isOwn && OVERVIEW.ownRow) {
-    focusName = OVERVIEW.ownRow.name; focusParty = OVERVIEW.ownRow.party; focusVotes = OVERVIEW.ownRow.votes; focusPct = OVERVIEW.ownRow.pct; focusRank = OVERVIEW.ownRank;
-    focusPhoto = OVERVIEW.ownPhoto || OVERVIEW.ownRow.photo_url || '';
-    if (focusRank === 1) { statusLabel = 'Leading'; statusClass = 'leading'; } else { statusLabel = 'Rank #' + focusRank; statusClass = 'trailing'; }
-  } else {
-    var ld = lb[0];
-    if (!ld) { el.className = 'hero other'; el.innerHTML = '<div class="hero-inner"><div class="empty" style="padding:20px 0;"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">No results yet</div><div class="empty-sub">Tallies will appear as agents submit results.</div></div></div>'; return; }
-    focusName = ld.name; focusParty = ld.party; focusVotes = ld.votes; focusPct = ld.pct; focusRank = 1; statusLabel = 'Leading'; statusClass = 'leading'; focusPhoto = ld.photo_url || '';
-  }
-
-  var margin = OVERVIEW.margin || 0;
-  var focusInitial = focusName ? focusName.charAt(0).toUpperCase() : '?';
-  var focusPhotoHtml = focusPhoto ? '<img src="' + escAttr(focusPhoto) + '" alt="" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(focusInitial) + '\'">' : '';
-
+  var focusPct = total > 0 ? ((leader.votes/total)*100).toFixed(1) : '0.0';
+  
   el.className = 'hero' + (isOwn ? '' : ' other');
-  el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status ' + statusClass + '">' + (statusClass === 'leading' ? '<i class="fas fa-crown"></i> ' : '') + esc(statusLabel) + '</span><span class="hero-rank">#' + focusRank + ' / ' + lb.length + '</span></div></div><div class="hero-name-row"><div class="hero-avatar' + (focusPhoto ? '' : ' no-photo') + '">' + (focusPhoto ? focusPhotoHtml : focusInitial) + '</div><div><div class="hero-eyebrow">' + (isOwn ? 'You' : 'Leading') + '</div><div class="hero-name">' + esc(focusName) + '</div><div class="hero-meta">' + esc(focusParty) + ' · ' + esc(OVERVIEW.viewingPosition) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + focusVotes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + focusPct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">' + (margin > 0 ? '+' : '') + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div><div class="hero-share"><div class="hero-share-track"><div class="hero-share-bar" style="width:' + focusPct + '%"></div></div><div class="hero-share-legend"><span>' + OVERVIEW.reported + ' of ' + OVERVIEW.totalStreams + ' streams reported</span><span>' + globalTotal.toLocaleString() + ' total votes</span></div></div></div>';
-}
+  el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span><div class="hero-badges"><span class="badge-status leading"><i class="fas fa-crown"></i> Leading</span></div></div><div class="hero-name-row"><div class="hero-avatar"><img src="' + escAttr(leader.photo_url) + '"></div><div><div class="hero-eyebrow">' + esc(OVERVIEW.viewingPosition) + ' · ' + esc(scopeLabel) + '</div><div class="hero-name">' + esc(leader.name) + '</div><div class="hero-meta">' + esc(leader.party) + '</div></div></div><div class="hero-stats"><div><div class="hero-stat-num">' + leader.votes.toLocaleString() + '</div><div class="hero-stat-lbl">Votes</div></div><div><div class="hero-stat-num blue">' + focusPct + '%</div><div class="hero-stat-lbl">Share</div></div><div><div class="hero-stat-num">' + (margin > 0 ? '+' : '') + margin.toLocaleString() + '</div><div class="hero-stat-lbl">Margin</div></div></div></div>';
+    }
 
 // ================================================================
 //  RENDERING — BREADCRUMB & DRILL GRID
