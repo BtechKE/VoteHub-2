@@ -585,6 +585,7 @@ var DRILL_CENTRE = '';
 var DRILL_CENTRE_NAME = ''; 
 var DRILL_DATA = null;
 // --- TRACKER STATE ---
+var TRACKER_FORMS = {}; // Tracks which stream/position combos have photos
 var TRACKER_DATA = null; 
 var TRACKER_LEVEL = ''; // 'constituency', 'ward', 'centre', 'stream'
 var TRACKER_CONST_ID = ''; 
@@ -852,13 +853,11 @@ async function loadTracker(silent) {
     var filterWardIds = [];
     var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
 
-    // Fetch Constituencies based on scope
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (activeCounty) constQuery = constQuery.eq('county_id', activeCounty);
     const { data: constsData } = await constQuery;
 
-    // Fetch Wards
     let wardQuery = db.from('wards').select('*');
     if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
     else wardQuery = wardQuery.in('constituency_id', (constsData || []).map(c => c.id));
@@ -872,9 +871,21 @@ async function loadTracker(silent) {
     ]);
 
     var streamCodes = (streamsData || []).map(s => s.code);
-    const { data: resultsData } = await db.from('results').select('stream_code, position').in('stream_code', streamCodes);
+    
+    // FETCH RESULTS AND FORMS
+    const [ { data: resultsData }, { data: formsData } ] = await Promise.all([
+        db.from('results').select('stream_code, position').in('stream_code', streamCodes),
+        db.from('form_photos').select('stream_code, position, photo_url').in('stream_code', streamCodes)
+    ]);
+
+    // Build the FORMS dictionary
+    TRACKER_FORMS = {};
+    (formsData || []).forEach(f => {
+        TRACKER_FORMS[f.stream_code + '_' + f.position] = f.photo_url;
+    });
 
     const reportedMap = {};
+    
     (resultsData || []).forEach(r => {
         if (!reportedMap[r.stream_code]) reportedMap[r.stream_code] = {};
         reportedMap[r.stream_code][r.position] = true;
@@ -1521,11 +1532,21 @@ function renderTrackerStreamCard(s) {
   var cls = 'card'; if (s.isComplete) cls += ' leading'; else if (s.done === 0) cls += ' empty'; else cls += ' trailing';
   var chip; if (s.isComplete) chip = { cls: 'done', label: '<i class="fas fa-circle-check"></i> Complete' }; else if (s.done > 0) chip = { cls: 'partial', label: '<i class="fas fa-circle-half-stroke"></i> ' + s.done + '/' + s.total }; else chip = { cls: 'pending', label: '<i class="fas fa-circle"></i> Pending' };
   var pipsHtml = TRACKER_DATA.positions.map(function (pos) {
-    var hit = s.pips[pos]; var short = POSITION_SHORT[pos] || pos.charAt(0); var tip = hit ? pos + ' · tap to view results' : pos + ' · not submitted yet';
-    var click = hit ? ' onclick="openTrackerPip(\'' + escAttr(s.code) + '\',\'' + escAttr(pos) + '\')"' : '';
-    var tag = hit ? 'button' : 'span'; var tagClose = hit ? '</button>' : '</span>'; var extra = hit ? ' type="button"' : '';
-    return '<' + tag + extra + ' class="pip ' + (hit ? 'pip-done' : 'pip-pending') + '" title="' + escAttr(tip) + '"' + click + '>' + short + tagClose;
-  }).join('');
+  var hit = s.pips[pos]; 
+  var short = POSITION_SHORT[pos] || pos.charAt(0); 
+  var tip = hit ? pos + ' · tap to view results' : pos + ' · not submitted yet';
+  var click = hit ? ' onclick="openTrackerPip(\'' + escAttr(s.code) + '\',\'' + escAttr(pos) + '\')"' : '';
+  
+  // Check if this specific stream/position has a photo
+  var hasForm = !!TRACKER_FORMS[s.code + '_' + pos];
+  var formBadge = hasForm ? '<span style="position:absolute;bottom:-3px;right:-3px;background:var(--blue);color:white;border-radius:50%;width:12px;height:12px;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);"><i class="fas fa-camera" style="font-size:6px;"></i></span>' : '';
+  
+  var tag = hit ? 'button' : 'span'; 
+  var tagClose = hit ? '</button>' : '</span>'; 
+  var extra = hit ? ' type="button"' : '';
+  
+  return '<' + tag + extra + ' class="pip ' + (hit ? 'pip-done' : 'pip-pending') + '" title="' + escAttr(tip) + '"' + click + '>' + short + formBadge + tagClose;
+}).join('');
   var lastHtml = s.lastAt ? '<div class="tracker-last"><i class="fas fa-clock"></i>' + esc(timeAgo(new Date(s.lastAt).getTime())) + (s.lastBy ? ' · ' + esc(s.lastBy) : '') + '</div>' : '';
   return '<div class="' + cls + '"><div class="card-head"><div><div class="card-name">' + esc(s.label) + '</div><div class="card-sub">' + esc(s.code) + '</div></div><span class="card-status ' + chip.cls + '">' + chip.label + '</span></div><div class="pips">' + pipsHtml + '</div>' + lastHtml + '</div>';
 }
@@ -1537,47 +1558,86 @@ function findTrackerStreamContext(streamCode) {
 }
 
 async function openTrackerPip(streamCode, position) {
-  var sheetBg = document.getElementById('sheetBg'); var sheet = document.getElementById('sheetContent');
+  var sheetBg = document.getElementById('sheetBg'); 
+  var sheet = document.getElementById('sheetContent');
   if (!sheetBg || !sheet) { toast('Could not open sheet — please reload.', 'error'); return; }
   
   var ctx = findTrackerStreamContext(streamCode);
-  var label = ctx ? ctx.stream.label : streamCode; var centreName = ctx ? ctx.centre.centreName : ''; var wardName = ctx ? ctx.ward.wardName : '';
+  var label = ctx ? ctx.stream.label : streamCode; 
+  var centreName = ctx ? ctx.centre.centreName : ''; 
+  var wardName = ctx ? ctx.ward.wardName : '';
 
   sheetBg.classList.add('active');
   sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="load"><i class="fas fa-spinner"></i>Loading results…</div>';
 
   try {
+    // 1. Fetch Results
     const { data: results } = await db.from('results')
       .select('votes, submitted_by, created_at, candidates(name, party, photo_url)')
       .eq('stream_code', streamCode).eq('position', position);
 
     if (!results || results.length === 0) {
-      sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">Not submitted yet</div><div class="empty-sub">This position hasn\'t been submitted for this stream.</div></div>';
+      sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty"><div class="empty-icon"><i class="fas fa-hourglass-half"></i></div><div class="empty-title">Not submitted yet</div></div>';
       return;
     }
 
-   const mappedResults = results.map(r => ({
-    candidateName: r.candidates.name, party: r.candidates.party, photo_url: normalizeImageUrl(r.candidates.photo_url), votes: r.votes
-})).sort((a, b) => b.votes - a.votes);
+    const mappedResults = results.map(r => ({
+      candidateName: r.candidates.name, 
+      party: r.candidates.party, 
+      photo_url: normalizeImageUrl(r.candidates.photo_url), 
+      votes: r.votes
+    })).sort((a, b) => b.votes - a.votes);
+
+    // 2. Fetch Signed URL for the Form Photo (if it exists)
+    var formPhotoUrl = '';
+    var fileName = TRACKER_FORMS[streamCode + '_' + position];
+    if (fileName) {
+      const { data: signedData } = await db.storage.from('form-photos').createSignedUrl(fileName, 600); // Valid for 10 mins
+      if (signedData) formPhotoUrl = signedData.signedUrl;
+    }
 
     const res = {
-        submitted: true, submittedBy: results[0].submitted_by, submittedByName: results[0].submitted_by, submittedAt: new Date(results[0].created_at).toLocaleString(), results: mappedResults
+        submitted: true, 
+        submittedBy: results[0].submitted_by, 
+        submittedByName: results[0].submitted_by, 
+        submittedAt: new Date(results[0].created_at).toLocaleString(), 
+        results: mappedResults
     };
-    renderTrackerPipResult(res, position, label, centreName, wardName);
+    
+    renderTrackerPipResult(res, position, label, centreName, wardName, formPhotoUrl);
   } catch (err) {
     sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + '</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty"><div class="empty-title">Connection error</div></div>';
   }
 }
 
-function renderTrackerPipResult(res, position, label, centreName, wardName) {
-  var sheet = document.getElementById('sheetContent'); var total = (res.results || []).reduce(function (s, r) { return s + (Number(r.votes) || 0); }, 0);
+function renderTrackerPipResult(res, position, label, centreName, wardName, formPhotoUrl) {
+  var sheet = document.getElementById('sheetContent'); 
+  var total = (res.results || []).reduce(function (s, r) { return s + (Number(r.votes) || 0); }, 0);
+  
   var infoHtml = '<div class="pip-result-info"><div class="row"><i class="fas fa-user-check user"></i>Submitted by <strong>' + esc(res.submittedByName || res.submittedBy || 'Unknown') + '</strong></div><div class="row"><i class="fas fa-clock clock"></i>' + esc(res.submittedAt || 'Unknown time') + '</div><div class="row"><i class="fas fa-lock lock"></i>Locked · ' + total.toLocaleString() + ' total votes</div></div>';
+  
   var rowsHtml = (res.results || []).map(function (c, idx) {
-    var votes = Number(c.votes) || 0; var pct = total > 0 ? (votes / total * 100).toFixed(1) : '0.0'; var isLead = idx === 0 && votes > 0; var medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-    var initial = c.candidateName ? c.candidateName.charAt(0).toUpperCase() : '?'; var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
-    return '<div class="board-row' + (isLead ? ' leader' : '') + '" style="cursor:default;"><div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + medal + '</span></div><div class="board-info"><div class="board-name">' + esc(c.candidateName) + '</div><div class="board-party">' + esc(c.party) + '</div></div><div style="text-align:right;"><div class="board-votes">' + votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div><div></div></div>';
+    var votes = Number(c.votes) || 0; 
+    var pct = total > 0 ? (votes / total * 100).toFixed(1) : '0.0'; 
+    var isLead = idx === 0 && votes > 0; 
+    var medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+    var initial = c.candidateName ? c.candidateName.charAt(0).toUpperCase() : '?'; 
+    var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
+    
+    return '<div class="board-row' + (isLead ? ' leader' : '') + '" style="cursor:default;"><div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + medal + '</span></div><div class="board-info"><div class="board-name">' + esc(c.candidateName) + '</div><div class="board-party">' + esc(c.party) + '</div></div><div style="text-align:right;"><div class="board-votes" style="color:var(--ink);">' + votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div><div></div></div>';
   }).join('');
-  sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>' + infoHtml + '<div class="board" style="border:none;">' + rowsHtml + '</div>';
+
+  // NEW: Append the View Form Button if the photo exists
+  var formBtnHtml = '';
+  if (formPhotoUrl) {
+    formBtnHtml = `<div style="margin-top: 16px;">
+      <a href="${formPhotoUrl}" target="_blank" class="btn btn-ghost" style="width:100%; text-decoration:none; padding:14px; border-radius:12px; font-weight:700; color:var(--ink); border:1.5px solid var(--border-strong); display:flex; align-items:center; justify-content:center; gap:8px;">
+        <i class="fas fa-file-image" style="color:var(--blue); font-size:16px;"></i> View Statutory Form
+      </a>
+    </div>`;
+  }
+
+  sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>' + infoHtml + '<div class="board" style="border:none;">' + rowsHtml + '</div>' + formBtnHtml;
 }
 
 function trackerChip(done, total) {
