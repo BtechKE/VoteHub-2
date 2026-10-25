@@ -587,6 +587,15 @@ body {
     </div>
   </div>
 </div>
+  <!-- FULL SCREEN IMAGE VIEWER -->
+<div class="modal-bg" id="imageViewerModal" style="z-index: 10007; background: rgba(0,0,0,0.85);" onclick="if(event.target===this) this.classList.remove('active')">
+  <div style="width: 100%; max-width: 500px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
+    <img id="imageViewerImg" src="" style="width: 100%; max-height: 80vh; object-fit: contain; border-radius: 12px;">
+    <button class="btn btn-ghost" style="margin-top: 16px; background: white; color: black; width: 100%;" onclick="document.getElementById('imageViewerModal').classList.remove('active')">
+      <i class="fas fa-times"></i> Close
+    </button>
+  </div>
+</div>
 
 <script>
 // ================================================================
@@ -1013,11 +1022,21 @@ async function goToReadonly(streamCode, position) {
   
   var formHtml = '';
   if (hasForm || localPreview) {
-    var imgSrc = localPreview || `https://qkkhtglsstinsvbdmclt.supabase.co/storage/v1/object/public/form-photos/${streamCode}_${position.replace(/\s+/g, '')}.jpg`; 
-    formHtml = `<div class="form-thumbnail-wrap" onclick="openUploadModal('${streamCode}', '${position}')">
-      <img src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
-      <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
-    </div>`;
+  var imgSrc = localPreview || ''; 
+  formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
+    <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
+    <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
+  </div>`;
+  
+  // If no local preview (new device), fetch a secure URL just for the thumbnail
+  if (!localPreview && hasForm) {
+    db.storage.from('form-photos').createSignedUrl(streamCode + '_' + position.replace(/\s+/g, '') + '.jpg', 600).then(({data}) => {
+       if (data) {
+          var el = document.getElementById('formThumb_' + streamCode + '_' + position);
+          if (el) el.src = data.signedUrl;
+       }
+    });
+  }
   } else {
     formHtml = `<button class="form-attach-btn" onclick="openUploadModal('${streamCode}', '${position}')">
       <i class="fas fa-camera" style="font-size: 24px;"></i>
@@ -1285,6 +1304,27 @@ async function executeFormUpload() {
     btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Retry Upload';
   }
 }
+  async function viewAgentForm(streamCode, position) {
+  var localPreview = localStorage.getItem('form_preview_' + streamCode + '_' + position);
+  
+  if (localPreview) {
+    // If it's saved on the phone, open it instantly
+    document.getElementById('imageViewerImg').src = localPreview;
+    document.getElementById('imageViewerModal').classList.add('active');
+  } else {
+    // If they logged in on a new phone, fetch it securely from Supabase
+    var fileName = streamCode + '_' + position.replace(/\s+/g, '') + '.jpg';
+    const { data, error } = await db.storage.from('form-photos').createSignedUrl(fileName, 600);
+    
+    if (error || !data) {
+      toast('Could not load form.', 'error');
+      return;
+    }
+    
+    document.getElementById('imageViewerImg').src = data.signedUrl;
+    document.getElementById('imageViewerModal').classList.add('active');
+  }
+  }
 function doLogout() {
   thConfirm({
     title: 'Sign out?',
