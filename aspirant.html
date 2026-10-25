@@ -325,7 +325,7 @@
     .viewtab[data-view="tracker"]:not(.active) i { color: #C4453A; }
     .viewtab[data-view="tracker"]:not(.active):hover { background: rgba(196, 69, 58, 0.20); color: #8A2E27; border-color: rgba(196, 69, 58, 0.35); box-shadow: 0 3px 10px rgba(196, 69, 58, 0.15); transform: translateY(-1px); }
     .viewtab.active { background: var(--ink); color: #F0F0F0; border-color: var(--ink); box-shadow: none; } .viewtab.active i { color: var(--green); }
-    .board-votes { color: var(--green-dark); } .board-row.you .board-votes { color: var(--blue); }
+    .board-votes { color: var(--ink); } .board-row.you .board-votes { color: var(--blue); }
     .card-votes { color: var(--green-dark); } .card-pct { color: var(--blue); } .card.trailing .card-votes { color: var(--slate); }
     .cmp-votes { color: var(--green-dark); } .cmp-card.winner .cmp-votes { color: #4A7C3A; } .cmp-pct { color: var(--blue); }
     .tracker-stat.green .num { color: var(--green-dark); } .tracker-stat.blue .num { color: var(--blue); } .tracker-stat.warn .num { color: var(--danger); }
@@ -1595,7 +1595,7 @@ function renderTrackerBreadcrumb() {
 // ================================================================
 //  STREAM/CANDIDATE DETAIL & HELPERS
 // ================================================================
-function openStreamDetail(streamCode) {
+  function openStreamDetail(streamCode) {
   if (!OVERVIEW) return;
   
   var stream = OVERVIEW.streams.find(s => s.code === streamCode);
@@ -1610,9 +1610,11 @@ function openStreamDetail(streamCode) {
   
   var total = candidates.reduce((sum, c) => sum + c.votes, 0);
   var centre = OVERVIEW.centres.find(c => c.id === stream.centre_id);
+  var centreName = centre ? centre.name : 'Unknown Centre';
+  var streamLabel = 'STR ' + String(stream.stream_number).padStart(2, '0');
   
   // Build the HTML for the Bottom Sheet
-  var html = '<div class="sheet-head"><div><div class="sheet-title">' + esc(streamCode) + '</div><div class="sheet-sub">' + esc(centre ? centre.name : '') + ' · ' + total.toLocaleString() + ' total votes</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>';
+  var html = '<div class="sheet-head"><div><div class="sheet-title">' + esc(centreName) + ' · ' + esc(streamLabel) + '</div><div class="sheet-sub">' + total.toLocaleString() + ' total votes</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>';
   
   if (!candidates.length) {
       html += '<div class="empty" style="padding:20px;"><div class="empty-title">No votes recorded</div></div>';
@@ -1628,7 +1630,8 @@ function openStreamDetail(streamCode) {
           return '<div class="board-row' + (isLead ? ' leader' : '') + '" style="cursor:default;">' +
               '<div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + medal + '</span></div>' +
               '<div class="board-info"><div class="board-name">' + esc(c.name) + '</div><div class="board-party">' + esc(c.party) + '</div></div>' +
-              '<div style="text-align:right;"><div class="board-votes">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div>' +
+              // FIX: Forced the vote color to match the system charcoal black
+              '<div style="text-align:right;"><div class="board-votes" style="color: var(--ink);">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div>' +
           '</div>';
       }).join('');
       html += '</div>';
@@ -1636,7 +1639,8 @@ function openStreamDetail(streamCode) {
   
   document.getElementById('sheetContent').innerHTML = html;
   document.getElementById('sheetBg').classList.add('active');
-}
+        }
+
 
 function openCandidateDetail(code) {
   if (!OVERVIEW) return;
