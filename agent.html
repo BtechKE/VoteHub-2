@@ -656,28 +656,25 @@ async function loadStreams(silent) {
   }
   
   try {
-    // 1. Fetch streams assigned to this agent
     const { data: streamsData, error: streamErr } = await db.from('streams')
         .select('code, stream_number, centre_id, ward_id, centres(name)')
         .in('code', USER.assigned_streams || []);
-    
     if (streamErr) throw streamErr;
     
-    // 2. Fetch existing submissions for these streams
     const { data: existingResults, error: resErr } = await db.from('results')
         .select('stream_code, position')
         .in('stream_code', USER.assigned_streams || []);
-
     if (resErr) throw resErr;
 
-    // 3. Fetch existing form photos for these streams
-    const { data: existingForms, error: formErr } = await db.from('form_photos')
-        .select('stream_code, position')
-        .in('stream_code', USER.assigned_streams || []);
+    // Wrap form fetch in try/catch just in case RLS blocks it
+    let existingForms = [];
+    try {
+      const { data } = await db.from('form_photos')
+          .select('stream_code, position')
+          .in('stream_code', USER.assigned_streams || []);
+      existingForms = data || [];
+    } catch (e) { console.warn("Could not load forms:", e); }
 
-    if (formErr) throw formErr;
-
-    // 4. Map the data to our local STREAMS array
     STREAMS = (streamsData || []).map(s => ({
       code: s.code,
       centreId: s.centre_id,
@@ -686,7 +683,6 @@ async function loadStreams(silent) {
       wardId: s.ward_id
     })).sort((a,b) => a.streamNumber - b.streamNumber);
 
-    // 5. Build the STATUSES object
     STATUSES = {};
     STREAMS.forEach(st => {
       STATUSES[st.code] = {};
@@ -696,24 +692,19 @@ async function loadStreams(silent) {
       });
     });
 
-    // 6. Build the FORMS object (Tracks which positions have photos)
     window.FORMS = {};
     (existingForms || []).forEach(f => {
       if (!FORMS[f.stream_code]) FORMS[f.stream_code] = {};
       FORMS[f.stream_code][f.position] = true;
     });
 
-    // 7. Render the UI
     renderStreams();
 
   } catch (e) {
     console.error("Load Streams Error:", e);
     if (!silent) toast('Connection error.', 'error');
   } finally {
-    // 8. ALWAYS hide the loader when done
-    if (!silent) {
-      document.getElementById('appLoader').classList.remove('active');
-    }
+    if (!silent) document.getElementById('appLoader').classList.remove('active');
   }
 }
 
@@ -977,28 +968,22 @@ async function submitNow() {
       return;
     }
 
-    // --- SUCCESS ANIMATION SEQUENCE ---
     btn.disabled = false; 
     btn.innerHTML = '<i class="fas fa-lock"></i> Submit &amp; Lock';
     
     clearDraft(streamCode, position);
     STATUSES[streamCode][position] = { status: 'submitted' };
 
-    // Show the success modal
-document.getElementById('successTitle').textContent = position + ' Submitted!';
-document.getElementById('successSub').textContent = 'Data securely locked. Please upload the form.';
-document.getElementById('successOverlay').classList.add('active');
+    document.getElementById('successTitle').textContent = position + ' Submitted!';
+    document.getElementById('successSub').textContent = 'Data securely locked. Please upload the form.';
+    document.getElementById('successOverlay').classList.add('active');
 
-// Wait for the animation to finish (2 seconds) before showing upload prompt
-setTimeout(() => {
-  document.getElementById('successOverlay').classList.remove('active');
-  
-  // Show the upload modal instead of immediately advancing
-  setTimeout(() => {
-    promptFormUpload(streamCode, position);
-  }, 300);
-}, 2000);
-    
+    setTimeout(() => {
+      document.getElementById('successOverlay').classList.remove('active');
+      setTimeout(() => {
+        openUploadModal(streamCode, position); // <--- FIXED: Calls the correct new function
+      }, 300);
+    }, 2000);
 
   } catch (e) {
     console.error(e);
