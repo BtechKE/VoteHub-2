@@ -1086,100 +1086,79 @@ function renderDrillGrid() {
   document.getElementById('drillCount').textContent = ''; 
   renderBreadcrumb();
 
+  // Helper function to build the card uniformly
+  function buildCard(item, votesMap, typeLabel, onClickAction) {
+    var itemKey = item.id || item.code;
+    var votes = votesMap[itemKey] || {};
+    var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
+    var topCand = OVERVIEW.candMap[topCode];
+    var total = Object.values(votes).reduce((s,v) => s+v, 0);
+    var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
+    
+    // Party Tint & Remove Left Stripe
+    var tintStyle = 'border-left: none !important;';
+    if (topCand && topCand.color) {
+      tintStyle += ` background: linear-gradient(to right, ${tintBg(topCand.color, 0.08)} 0%, #FFFFFF 50%) !important;`;
+    }
+    
+    var leaderHtml = topCand ? `
+      <div class="card-leader">
+        <div class="avatar-wrap with-crown">
+          <img src="${topCand.photo_url}" onerror="this.src='';this.parentElement.textContent='${topCand.name.charAt(0)}'">
+          <span class="avatar-crown"><i class="fas fa-crown"></i></span>
+        </div>
+        <div class="card-leader-info">
+          <div class="card-leader-name">${esc(topCand.name)}</div>
+          <div class="card-leader-party">${esc(topCand.party)}</div>
+        </div>
+      </div>
+      <div class="card-numbers">
+        <span class="card-votes">${votes[topCode].toLocaleString()}</span>
+        <span class="card-pct">${pct}%</span>
+      </div>
+      <div class="card-bar">
+        <div class="card-bar-fill" style="width:${pct}%;background:${topCand.color || '#A5CF83'}"></div>
+      </div>
+    ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
+    
+    return `<div class="card" style="${tintStyle}" onclick="${onClickAction}">
+      <div class="card-head"><div><div class="card-name">${esc(item.name || item.code)}</div><div class="card-sub">${typeLabel}</div></div></div>
+      ${leaderHtml}
+    </div>`;
+  }
+
   // --- LEVEL 1: CONSTITUENCIES ---
   if (DRILL_LEVEL === 'constituency') {
-    el.innerHTML = OVERVIEW.consts.map(c => {
-      var votes = OVERVIEW.votesByConst[c.id] || {};
-      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCode];
-      var total = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
-      
-      var leaderHtml = topCand ? `
-        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
-        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
-      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
-      
-      return `<div class="card trailing" onclick="drillDown('ward', '${c.id}', '${c.name}')">
-        <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Constituency</div></div></div>
-        ${leaderHtml}
-      </div>`;
-    }).join('');
+    el.innerHTML = OVERVIEW.consts.map(c => 
+      buildCard(c, OVERVIEW.votesByConst, 'Constituency', `drillDown('ward', '${c.id}', '${c.name}')`)
+    ).join('');
     return;
   }
 
   // --- LEVEL 2: WARDS ---
   if (DRILL_LEVEL === 'ward') {
     var myWards = OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID);
-    el.innerHTML = myWards.map(w => {
-      var votes = OVERVIEW.votesByWard[w.id] || {};
-      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCode];
-      var total = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
-      
-      var leaderHtml = topCand ? `
-        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
-        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
-      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
-      
-      return `<div class="card trailing" onclick="drillDown('centre', '${w.id}', '${w.name}')">
-        <div class="card-head"><div><div class="card-name">${esc(w.name)}</div><div class="card-sub">Ward</div></div></div>
-        ${leaderHtml}
-      </div>`;
-    }).join('');
+    el.innerHTML = myWards.map(w => 
+      buildCard(w, OVERVIEW.votesByWard, 'Ward', `drillDown('centre', '${w.id}', '${w.name}')`)
+    ).join('');
     return;
   }
 
   // --- LEVEL 3: CENTRES ---
   if (DRILL_LEVEL === 'centre') {
     var myCentres = OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD);
-    el.innerHTML = myCentres.map(c => {
-      var votes = OVERVIEW.votesByCentre[c.id] || {};
-      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCode];
-      var total = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
-      
-      var leaderHtml = topCand ? `
-        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
-        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
-      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
-      
-      return `<div class="card trailing" onclick="drillDown('stream', '${c.id}', '${c.name}')">
-        <div class="card-head"><div><div class="card-name">${esc(c.name)}</div><div class="card-sub">Polling Centre</div></div></div>
-        ${leaderHtml}
-      </div>`;
-    }).join('');
+    el.innerHTML = myCentres.map(c => 
+      buildCard(c, OVERVIEW.votesByCentre, 'Polling Centre', `drillDown('stream', '${c.id}', '${c.name}')`)
+    ).join('');
     return;
   }
 
   // --- LEVEL 4: STREAMS ---
   if (DRILL_LEVEL === 'stream') {
     var myStreams = OVERVIEW.streams.filter(s => s.centre_id === DRILL_CENTRE);
-    if (!myStreams.length) { el.innerHTML = '<div class="empty">No streams configured for this centre.</div>'; return; }
-    
     el.innerHTML = myStreams.map(s => {
-      var votes = OVERVIEW.votesByStream[s.code] || {};
-      var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-      var topCand = OVERVIEW.candMap[topCode];
-      var total = Object.values(votes).reduce((s,v) => s+v, 0);
-      var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
       var streamLabel = 'STR ' + String(s.stream_number).padStart(2, '0');
-      
-      var leaderHtml = topCand ? `
-        <div class="card-leader"><div class="avatar-wrap with-crown"><img src="${topCand.photo_url}"><span class="avatar-crown"><i class="fas fa-crown"></i></span></div>
-        <div class="card-leader-info"><div class="card-leader-name">${esc(topCand.name)}</div><div class="card-leader-party">${esc(topCand.party)}</div></div></div>
-        <div class="card-numbers"><span class="card-votes">${votes[topCode].toLocaleString()}</span><span class="card-pct">${pct}%</span></div>
-      ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
-      
-      return `<div class="card trailing" onclick="openStreamDetail('${s.code}')">
-        <div class="card-head"><div><div class="card-name">${streamLabel}</div><div class="card-sub">${esc(s.code)}</div></div></div>
-        ${leaderHtml}
-      </div>`;
+      return buildCard({ code: s.code, name: streamLabel }, OVERVIEW.votesByStream, s.code, `openStreamDetail('${s.code}')`);
     }).join('');
     return;
   }
@@ -1617,18 +1596,46 @@ function renderTrackerBreadcrumb() {
 //  STREAM/CANDIDATE DETAIL & HELPERS
 // ================================================================
 function openStreamDetail(streamCode) {
-  if (!DRILL_DATA || !DRILL_DATA.streams) return;
-  var st = DRILL_DATA.streams.filter(function (s) { return s.streamCode === streamCode; })[0]; if (!st) return;
-  var sheetBg = document.getElementById('sheetBg'); var sheet = document.getElementById('sheetContent'); if (!sheetBg || !sheet) return;
-  var total = st.totalVotes;
-  var rowsHtml = st.candidates.map(function (c, idx) {
-    var pct = total > 0 ? (c.votes / total * 100).toFixed(1) : '0.0'; var isLead = idx === 0 && c.votes > 0; var isYou = isOwnCandidate(c.name) && !USER.isSpectator;
-    var cls = 'board-row' + (isLead ? ' leader' : '') + (isYou ? ' you' : ''); var medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-    var initial = c.name ? c.name.charAt(0).toUpperCase() : '?'; var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
-    return '<div class="' + cls + '" style="cursor:default;"><div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + medal + '</span></div><div class="board-info"><div class="board-name">' + esc(c.name) + (isYou ? '<span class="board-you-pill">You</span>' : '') + '</div><div class="board-party">' + esc(c.party) + '</div></div><div style="text-align:right;"><div class="board-votes">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div></div>';
-  }).join('');
-  sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(st.centreName) + ' · ' + esc(st.streamLabel) + '</div><div class="sheet-sub">' + esc(OVERVIEW.viewingPosition) + ' · ' + total.toLocaleString() + ' total votes</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="board" style="border:none;">' + (rowsHtml || '<div class="empty" style="padding:20px;">No votes recorded.</div>') + '</div>';
-  sheetBg.classList.add('active');
+  if (!OVERVIEW) return;
+  
+  var stream = OVERVIEW.streams.find(s => s.code === streamCode);
+  if (!stream) return;
+  
+  // Get the votes for this specific stream
+  var votes = OVERVIEW.votesByStream[streamCode] || {};
+  var candidates = Object.keys(votes).map(code => {
+      var c = OVERVIEW.candMap[code] || {};
+      return { code: code, name: c.name, party: c.party, photo_url: c.photo_url, votes: votes[code] };
+  }).sort((a,b) => b.votes - a.votes);
+  
+  var total = candidates.reduce((sum, c) => sum + c.votes, 0);
+  var centre = OVERVIEW.centres.find(c => c.id === stream.centre_id);
+  
+  // Build the HTML for the Bottom Sheet
+  var html = '<div class="sheet-head"><div><div class="sheet-title">' + esc(streamCode) + '</div><div class="sheet-sub">' + esc(centre ? centre.name : '') + ' · ' + total.toLocaleString() + ' total votes</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>';
+  
+  if (!candidates.length) {
+      html += '<div class="empty" style="padding:20px;"><div class="empty-title">No votes recorded</div></div>';
+  } else {
+      html += '<div class="board" style="border:none;">';
+      html += candidates.map((c, idx) => {
+          var pct = total > 0 ? (c.votes / total * 100).toFixed(1) : '0.0';
+          var isLead = idx === 0 && c.votes > 0;
+          var medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+          var initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
+          var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
+          
+          return '<div class="board-row' + (isLead ? ' leader' : '') + '" style="cursor:default;">' +
+              '<div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + photoHtml + '<span class="avatar-rank">' + medal + '</span></div>' +
+              '<div class="board-info"><div class="board-name">' + esc(c.name) + '</div><div class="board-party">' + esc(c.party) + '</div></div>' +
+              '<div style="text-align:right;"><div class="board-votes">' + c.votes.toLocaleString() + '</div><div class="board-pct">' + pct + '%</div></div>' +
+          '</div>';
+      }).join('');
+      html += '</div>';
+  }
+  
+  document.getElementById('sheetContent').innerHTML = html;
+  document.getElementById('sheetBg').classList.add('active');
 }
 
 function openCandidateDetail(code) {
