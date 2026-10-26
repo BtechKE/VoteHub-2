@@ -2979,12 +2979,8 @@ function changePage(type, page, renderFunc) {
   renderFunc();
 }
 
-function renderSearchAndPagination(type, totalItems, renderFunc) {
-  var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-  var currentPage = PAGE_STATE[type];
-  
-  // Search Bar HTML
-  var html = `
+function renderSearchBar(type, renderFunc) {
+  return `
     <div style="margin-bottom: 16px; position: relative;">
       <i class="fas fa-search" style="position: absolute; left: 14px; top: 14px; color: var(--text-muted);"></i>
       <input type="text" placeholder="Search ${type}..." value="${escAttr(SEARCH_STATE[type])}" 
@@ -2992,15 +2988,20 @@ function renderSearchAndPagination(type, totalItems, renderFunc) {
         style="width: 100%; padding: 12px 14px 12px 40px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg); font-size: 14px; transition: all 0.2s;">
     </div>
   `;
+}
 
-  // Pagination HTML
+function renderPaginationControls(type, totalItems, renderFunc) {
+  var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  var currentPage = PAGE_STATE[type];
+  var html = '';
+
   if (totalPages > 1) {
     html += '<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 20px; flex-wrap: wrap;">';
     
     // Prev Button
     html += `<button class="btn btn-ghost btn-sm" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage('${type}', ${currentPage - 1}, ${renderFunc.name})"><i class="fas fa-chevron-left"></i></button>`;
     
-    // Page Numbers (Smart ellipsis logic)
+    // Page Numbers
     for (let i = 1; i <= totalPages; i++) {
       if (totalPages > 7 && i > 2 && i < totalPages - 1 && Math.abs(i - currentPage) > 1) {
         if (i === 3 || i === totalPages - 2) html += '<span style="color:var(--text-muted); padding:0 4px;">...</span>';
@@ -3018,9 +3019,9 @@ function renderSearchAndPagination(type, totalItems, renderFunc) {
     html += `<button class="btn btn-ghost btn-sm" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage('${type}', ${currentPage + 1}, ${renderFunc.name})"><i class="fas fa-chevron-right"></i></button>`;
     html += '</div>';
   }
-  
   return html;
 }
+
 function renderWards() {
   var el = document.getElementById('wardsList');
   if (!WARDS.length) { el.innerHTML = emptyHTML('No wards yet', 'Add your first ward.'); return; }
@@ -3037,8 +3038,10 @@ function renderWards() {
   var start = (PAGE_STATE.wards - 1) * ITEMS_PER_PAGE;
   var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
   
-  var html = renderSearchAndPagination('wards', filtered.length, renderWards);
+  // 1. Search Bar
+  var html = renderSearchBar('wards', renderWards);
   
+  // 2. List
   if (!paginated.length) {
     html += emptyHTML('No results found', 'Try a different search term.');
   } else {
@@ -3046,6 +3049,10 @@ function renderWards() {
       `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`
     ).join('') + '</div>';
   }
+  
+  // 3. Pagination (at the bottom)
+  html += renderPaginationControls('wards', filtered.length, renderWards);
+  
   el.innerHTML = html;
 }
 
@@ -3055,18 +3062,18 @@ function renderCentres() {
   
   var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w.name);
   
-  // Search Filter
   var filtered = CENTRES.filter(c => 
     c.name.toLowerCase().includes(SEARCH_STATE.centres) || 
     (wardMap[c.ward_id] || '').toLowerCase().includes(SEARCH_STATE.centres)
   );
   
-  // Pagination Slice
   var start = (PAGE_STATE.centres - 1) * ITEMS_PER_PAGE;
   var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
   
-  var html = renderSearchAndPagination('centres', filtered.length, renderCentres);
+  // 1. Build the search bar
+  var html = renderSearchBar('centres', renderCentres);
   
+  // 2. Build the list
   if (!paginated.length) {
     html += emptyHTML('No results found', 'Try a different search term.');
   } else {
@@ -3074,6 +3081,10 @@ function renderCentres() {
       `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`
     ).join('') + '</div>';
   }
+  
+  // 3. Append the pagination at the bottom
+  html += renderPaginationControls('centres', filtered.length, renderCentres);
+  
   el.innerHTML = html;
 }
 function renderStreams() {
@@ -3092,8 +3103,10 @@ function renderStreams() {
   var start = (PAGE_STATE.streams - 1) * ITEMS_PER_PAGE;
   var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
   
-  var html = renderSearchAndPagination('streams', filtered.length, renderStreams);
+  // 1. Search Bar
+  var html = renderSearchBar('streams', renderStreams);
   
+  // 2. List
   if (!paginated.length) {
     html += emptyHTML('No results found', 'Try a different search term.');
   } else {
@@ -3111,6 +3124,10 @@ function renderStreams() {
       html += '</div></div>';
     }
   }
+  
+  // 3. Pagination (at the bottom)
+  html += renderPaginationControls('streams', filtered.length, renderStreams);
+  
   el.innerHTML = html;
 }
 
