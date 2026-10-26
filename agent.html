@@ -1262,22 +1262,35 @@ async function executeFormUpload() {
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing...';
 
+  var fileToUpload = currentFormFile;
+
   try {
-    // 1. Compress Image to ~400KB
-    const options = { maxSizeMB: 0.4, maxWidthOrHeight: 1800, useWebWorker: true };
-    const compressedFile = await imageCompression(currentFormFile, options);
+    // LIGHTER SETTINGS: Reduced maxWidth to 1200px to save phone memory
+    const options = { 
+      maxSizeMB: 0.4, 
+      maxWidthOrHeight: 1200, 
+      useWebWorker: false, // Disabled Web Worker to prevent RAM spikes
+      initialQuality: 0.8
+    };
+    
+    try {
+      fileToUpload = await imageCompression(currentFormFile, options);
+    } catch (compressError) {
+      // FALLBACK: If the phone still fails, just upload the original (it's under 5MB)
+      console.warn("Compression failed, uploading original file", compressError);
+      toast('Compressing failed, uploading original photo.', 'info');
+      fileToUpload = currentFormFile;
+    }
 
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
 
-    // 2. Upload to Supabase Storage
     var fileName = currentFormStream + '_' + currentFormPos.replace(/\s+/g, '') + '.jpg';
     const { error: uploadError } = await db.storage
       .from('form-photos')
-      .upload(fileName, compressedFile, { upsert: true }); // Overwrite if exists
+      .upload(fileName, fileToUpload, { upsert: true }); 
 
     if (uploadError) throw new Error(uploadError.message);
 
-    // 3. Save record to Database
     const { error: dbError } = await db.from('form_photos').upsert({
       stream_code: currentFormStream,
       position: currentFormPos,
@@ -1287,24 +1300,19 @@ async function executeFormUpload() {
 
     if (dbError) throw new Error(dbError.message);
 
-      // 4. Save local preview for instant offline viewing
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
-  };
-  reader.readAsDataURL(compressedFile);
+    // Save preview locally
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
+    };
+    reader.readAsDataURL(fileToUpload); // Use the uploaded file (compressed or original)
 
-  // 5. Update the FORMS state so the badge turns green
-  if (!FORMS[currentFormStream]) FORMS[currentFormStream] = {};
-  FORMS[currentFormStream][currentFormPos] = true;
+    toast('Form uploaded securely!', 'success');
+    document.getElementById('formPreviewModal').classList.remove('active');
+    
+    goToPositions(currentFormStream);
 
-  toast('Form uploaded securely!', 'success');
-  document.getElementById('formPreviewModal').classList.remove('active');
-  
-  // 6. Go straight back to the Read-Only screen to see the new photo
-  goToReadonly(currentFormStream, currentFormPos);
-
-} catch (err) {
+  } catch (err) {
     console.error(err);
     toast('Upload failed: ' + err.message, 'error');
     btn.disabled = false;
