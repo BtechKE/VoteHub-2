@@ -1968,16 +1968,15 @@ function thConfirm(opts) {
     setTimeout(function () { var ok = wrap.querySelector('[data-act="ok"]'); if (ok) ok.focus(); }, 60);
   });
 }
+// ================================================================
+//  CUSTOM PREMIUM DROPDOWN ENGINE
+// ================================================================
 var activeSelectElement = null;
+var isOpeningSelect = false; 
 
-document.addEventListener('click', function(e) {
-  var select = e.target.closest('select');
-  if (!select) return;
-
-  // Only trigger custom UI on mobile/tablets
-  if (window.innerWidth > 768) return;
-
-  e.preventDefault(); // Stop the native OS dropdown
+function openCustomSelect(select) {
+  if (isOpeningSelect) return;
+  isOpeningSelect = true;
   activeSelectElement = select;
   
   var title = select.getAttribute('data-title') || 'Select Option';
@@ -1992,8 +1991,10 @@ document.addEventListener('click', function(e) {
     div.className = 'custom-select-option' + (isSelected ? ' selected' : '');
     div.innerHTML = `<span>${opt.text}</span> <i class="fas fa-check"></i>`;
     
-    div.onclick = function() {
+    div.onclick = function(e) {
+      e.stopPropagation();
       select.value = opt.value;
+      // Trigger the original onchange event
       select.dispatchEvent(new Event('change'));
       closeCustomSelect();
     };
@@ -2001,11 +2002,35 @@ document.addEventListener('click', function(e) {
   });
 
   document.getElementById('customSelectModal').classList.add('active');
-});
+  
+  // Reset guard after animation
+  setTimeout(() => { isOpeningSelect = false; }, 300);
+}
+
+// 1. INTERCEPT MOBILE TOUCH (Stops the native Android/iOS menu)
+document.addEventListener('touchstart', function(e) {
+  var select = e.target.closest('select');
+  if (!select) return;
+  if (window.innerWidth > 768) return; // Only on mobile
+  
+  e.preventDefault(); // THIS STOPS THE NATIVE MENU
+  openCustomSelect(select);
+}, { passive: false, capture: true });
+
+// 2. INTERCEPT DESKTOP CLICKS / MOBILE EMULATORS
+document.addEventListener('mousedown', function(e) {
+  var select = e.target.closest('select');
+  if (!select) return;
+  if (window.innerWidth > 768) return;
+  
+  e.preventDefault(); 
+  openCustomSelect(select);
+}, { capture: true });
 
 function closeCustomSelect() {
   document.getElementById('customSelectModal').classList.remove('active');
   activeSelectElement = null;
+  isOpeningSelect = false;
 }
   // START
 init();
