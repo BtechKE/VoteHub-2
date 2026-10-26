@@ -10,7 +10,7 @@
   <!-- Font Awesome & Supabase -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+  
 
   <style>
     /* ================================================================
@@ -1224,12 +1224,11 @@ async function handleFormUpload(event) {
     return;
   }
 
-  // USE OBJECT URL (Zero RAM usage)
+  // Use Object URL instead of readAsDataURL (Saves RAM)
   var objectUrl = URL.createObjectURL(file);
   
   var img = new Image();
   img.onload = function() {
-    // Portrait Check
     if (img.width > img.height) {
       toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
       URL.revokeObjectURL(objectUrl);
@@ -1243,10 +1242,6 @@ async function handleFormUpload(event) {
     document.getElementById('confirmUploadBtn').disabled = false;
     document.getElementById('formPreviewModal').classList.add('active');
   };
-  img.onerror = function() {
-    toast('Could not read image file.', 'error');
-    URL.revokeObjectURL(objectUrl);
-  };
   img.src = objectUrl;
 }
 
@@ -1254,7 +1249,44 @@ function retakePhoto() {
   document.getElementById('formPreviewModal').classList.remove('active');
   openUploadModal(currentFormStream, currentFormPos);
 }
+// Shrinks while decoding, so the full-size bitmap never exists in RAM
+async function shrinkImage(file, maxSize, quality) {
+  let bitmap;
+  try {
+    const probe = await createImageBitmap(file, { resizeWidth: 64 });
+    const landscape = probe.width >= probe.height;
+    probe.close();
 
+    bitmap = await createImageBitmap(file, {
+      [landscape ? 'resizeWidth' : 'resizeHeight']: maxSize,
+      resizeQuality: 'medium',
+      imageOrientation: 'from-image'
+    });
+  } catch (e) {
+    // Fallback for older browsers
+    bitmap = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  if (bitmap.close) bitmap.close();
+
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+  canvas.width = canvas.height = 0; // Free memory immediately
+  return blob;
+}
 async function executeFormUpload() {
   if (!currentFormFile) return;
   
@@ -1262,22 +1294,13 @@ async function executeFormUpload() {
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Compressing...';
 
-  var fileToUpload = currentFormFile;
-
   try {
-    // LIGHTER SETTINGS: Reduced maxWidth to 1200px to save phone memory
-    const options = { 
-      maxSizeMB: 0.4, 
-      maxWidthOrHeight: 1200, 
-      useWebWorker: false, // Disabled Web Worker to prevent RAM spikes
-      initialQuality: 0.8
-    };
-    
+    let fileToUpload;
     try {
-      fileToUpload = await imageCompression(currentFormFile, options);
-    } catch (compressError) {
-      // FALLBACK: If the phone still fails, just upload the original (it's under 5MB)
-      console.warn("Compression failed, uploading original file", compressError);
+      // Use Claude's function instead of browser-image-compression
+      fileToUpload = await shrinkImage(currentFormFile, 1200, 0.8);
+    } catch (err) {
+      console.warn('Compression failed, uploading original', err);
       toast('Compressing failed, uploading original photo.', 'info');
       fileToUpload = currentFormFile;
     }
@@ -1287,7 +1310,7 @@ async function executeFormUpload() {
     var fileName = currentFormStream + '_' + currentFormPos.replace(/\s+/g, '') + '.jpg';
     const { error: uploadError } = await db.storage
       .from('form-photos')
-      .upload(fileName, fileToUpload, { upsert: true }); 
+      .upload(fileName, fileToUpload, { upsert: true, contentType: 'image/jpeg' }); 
 
     if (uploadError) throw new Error(uploadError.message);
 
@@ -1300,16 +1323,26 @@ async function executeFormUpload() {
 
     if (dbError) throw new Error(dbError.message);
 
-    // Save preview locally
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, e.target.result);
-    };
-    reader.readAsDataURL(fileToUpload); // Use the uploaded file (compressed or original)
+    // Tiny thumbnail only (~5-10 KB), and never let this break the upload
+    try {
+      const thumb = await shrinkImage(fileToUpload, 150, 0.6);
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(thumb);
+      });
+      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, dataUrl);
+    } catch (e) {
+      console.warn('Thumbnail cache skipped', e);
+    }
 
     toast('Form uploaded securely!', 'success');
     document.getElementById('formPreviewModal').classList.remove('active');
     
+    // Instantly update the UI
+    if (!FORMS[currentFormStream]) FORMS[currentFormStream] = {};
+    FORMS[currentFormStream][currentFormPos] = true;
     goToPositions(currentFormStream);
 
   } catch (err) {
