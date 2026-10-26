@@ -4724,7 +4724,6 @@ function selectExportPos(pos) {
   document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.toggle('active', b.dataset.pos === pos); });
   document.getElementById('exportGoBtn').disabled = false;
 }
-
 async function generatePDF() {
   if (!exportSelectedPos) return;
   var pos = exportSelectedPos;
@@ -4734,48 +4733,103 @@ async function generatePDF() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
 
   try {
-    // 1. Fetch all necessary data from Supabase
-    const [ { data: cands }, { data: totals }, { data: wardRes }, { data: streamsData }, { data: resultsData }, { data: wardsData } ] = await Promise.all([
-      db.from('candidates').select('*').eq('position', pos), 
-      db.from('candidate_totals').select('*'), 
-      db.from('ward_results').select('*').eq('position', pos), 
-      db.from('streams').select('code, ward_id'), 
-      db.from('results').select('stream_code').eq('position', pos),
-      db.from('wards').select('*')
+    // 1. Fetch data scoped ONLY to the current county
+    const [ { data: cands }, { data: resultsData }, { data: formsData } ] = await Promise.all([
+      db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY).eq('position', pos), 
+      db.from('results').select('stream_code, candidate_code, votes').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos),
+      db.from('form_photos').select('stream_code').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos)
     ]);
 
-    // 2. Process data for the PDF
-    var candMap = {}; cands.forEach(c => candMap[c.code] = c);
-    var totalMap = {}; (totals||[]).forEach(t => totalMap[t.candidate_code] = t.total_votes);
-
-    var leaderboard = cands.map(c => ({
-      name: c.name, party: c.party, votes: totalMap[c.code] || 0
-    })).sort((a,b) => b.votes - a.votes);
+    // 2. Build Lookup Maps
+    var candMap = {}; 
+    (cands||[]).forEach(c => candMap[c.code] = c);
     
+    var streamMap = {}; STREAMS.forEach(s => streamMap[s.code] = s);
+    var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
+    var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
+    var constMap = {}; CONSTITUENCIES.forEach(c => constMap[c.id] = c);
+
+    // 3. Aggregate Votes & Forms
+    var votesByConst = {}, votesByWard = {}, totalByCand = {};
+    var formsByConst = {}, formsByWard = {};
+    
+    (resultsData || []).forEach(r => {
+      var stream = streamMap[r.stream_code]; if(!stream) return;
+      var centre = centreMap[stream.centre_id]; if(!centre) return;
+      var ward = wardMap[centre.ward_id]; if(!ward) return;
+      var constId = ward.constituency_id;
+
+      // Total Candidate Votes
+      if(!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
+      totalByCand[r.candidate_code] += r.votes;
+
+      // Ward Totals
+      if(!votesByWard[ward.id]) votesByWard[ward.id] = {};
+      votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
+
+      // Const Totals
+      if(!votesByConst[constId]) votesByConst[constId] = {};
+      votesByConst[constId][r.candidate_code] = (votesByConst[constId][r.candidate_code]||0) + r.votes;
+    });
+
+    // Count Forms
+    (formsData || []).forEach(f => {
+      var stream = streamMap[f.stream_code]; if(!stream) return;
+      var centre = centreMap[stream.centre_id]; if(!centre) return;
+      var ward = wardMap[centre.ward_id]; if(!ward) return;
+      var constId = ward.constituency_id;
+
+      formsByWard[ward.id] = (formsByWard[ward.id]||0) + 1;
+      formsByConst[constId] = (formsByConst[constId]||0) + 1;
+    });
+
+    // 4. Build Leaderboard
+    var leaderboard = (cands||[]).map(c => ({
+      name: c.name, party: c.party, votes: totalByCand[c.code] || 0
+    })).sort((a,b) => b.votes - a.votes);
     var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
 
-    var wardsList = (wardsData || []).map(w => {
-      var wCands = (wardRes||[]).filter(wr => wr.ward_id === w.id).map(wr => {
-        var c = candMap[wr.candidate_code] || {};
-        return { name: c.name, party: c.party, votes: wr.total_votes };
-      }).sort((a,b) => b.votes - a.votes);
-      var wTotal = wCands.reduce((sum, c) => sum + c.votes, 0);
-      return { wardName: w.name, candidates: wCands, totalVotes: wTotal };
-    }).filter(w => w.candidates.length > 0);
+    // 5. Build the Hierarchy Object for the PDF
+    var hierarchy = [];
+    
+    CONSTITUENCIES.forEach(cst => {
+      var cWards = WARDS.filter(w => w.constituency_id === cst.id);
+      if (!cWards.length) return;
+
+      var cCands = Object.keys(votesByConst[cst.id]||{}).map(code => ({
+        name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByConst[cst.id][code]
+      })).sort((a,b)=>b.votes-a.votes);
+      var cTotal = cCands.reduce((s,c)=>s+c.votes, 0);
+
+      var wardsArr = cWards.map(w => {
+        var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
+          name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
+        })).sort((a,b)=>b.votes-a.votes);
+        var wTotal = wCands.reduce((s,c)=>s+c.votes, 0);
+        
+        var wStreams = STREAMS.filter(s => centreMap[s.centre_id]?.ward_id === w.id);
+        var formsCount = formsByWard[w.id] || 0;
+
+        return { wardName: w.name, candidates: wCands, totalVotes: wTotal, totalStreams: wStreams.length, formsCount: formsCount };
+      }).filter(w => w.candidates.length > 0);
+
+      if (wardsArr.length > 0) {
+        hierarchy.push({ constName: cst.name, candidates: cCands, totalVotes: cTotal, wards: wardsArr, formsCount: formsByConst[cst.id] || 0 });
+      }
+    });
 
     var data = {
       position: pos,
-      constituency: CONFIG.Constituency || 'Constituency',
-      county: CONFIG.County || '',
+      county: CONFIG.County || COUNTIES.find(c=>c.id===CURRENT_COUNTY)?.name || 'County',
       leaderboard: leaderboard,
       totalVotes: totalVotes,
-      wards: wardsList,
+      hierarchy: hierarchy,
       reported: new Set((resultsData||[]).map(r => r.stream_code)).size,
-      totalStreams: (streamsData||[]).length,
+      totalStreams: STREAMS.length,
       generatedAt: new Date().toISOString()
     };
 
-    // 3. Build and save the PDF
+    // 6. Build and save the PDF
     buildPositionPDF(data);
     
     closeExportModal();
@@ -4808,8 +4862,8 @@ function buildPositionPDF(data) {
     doc.line(marginL + 3.6, headerH / 2 + 1.5, marginL + 6, headerH / 2 - 1.8);
     doc.setTextColor(INK[0], INK[1], INK[2]); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('TallyHub', marginL + 11, headerH / 2 + 1);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
-    doc.text('LIVE RESULTS · ' + data.position.toUpperCase(), pageW - marginR, headerH / 2 - 1, { align: 'right' });
-    doc.text(data.constituency + (data.county ? ' · ' + data.county : ''), pageW - marginR, headerH / 2 + 3, { align: 'right' });
+    doc.text('OFFICIAL REPORT · ' + data.position.toUpperCase(), pageW - marginR, headerH / 2 - 1, { align: 'right' });
+    doc.text(data.county, pageW - marginR, headerH / 2 + 3, { align: 'right' });
   }
 
   function drawFooter() {
@@ -4824,57 +4878,82 @@ function buildPositionPDF(data) {
   var currentY = contentTop;
   drawHeader();
 
+  // Title Section
   doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(data.position.toUpperCase(), marginL, currentY + 4);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.constituency + (data.county ? ' · ' + data.county : ''), marginL, currentY + 11);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.county + ' County', marginL, currentY + 11);
   doc.setFontSize(8.5); doc.text(timestamp + ' · ' + data.reported + ' of ' + data.totalStreams + ' streams reported', marginL, currentY + 17);
   currentY += 24;
 
   doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(1); doc.line(marginL, currentY, pageW - marginR, currentY); currentY += 8;
 
-  // Constituency Overview
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('CONSTITUENCY OVERVIEW', marginL, currentY);
-  doc.setDrawColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.setLineWidth(0.6); doc.line(marginL, currentY + 2, marginL + 24, currentY + 2); currentY += 8;
+  // Overall Leaderboard
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('OVERALL LEADERBOARD', marginL, currentY);
+  currentY += 6;
 
   if (!data.leaderboard.length) {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
   } else {
     var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
     doc.autoTable({
       startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
       styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
       headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
-      columnStyles: { 0: { cellWidth: 18, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
+      columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
       margin: { left: marginL, right: marginR }
     });
-    currentY = doc.lastAutoTable.finalY + 4;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('Total votes cast: ' + data.totalVotes.toLocaleString(), marginL, currentY); currentY += 8;
+    currentY = doc.lastAutoTable.finalY + 8;
   }
 
-  // Ward Breakdown
-  if (data.wards.length) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('WARD BREAKDOWN', marginL, currentY);
-    doc.setDrawColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.setLineWidth(0.6); doc.line(marginL, currentY + 2, marginL + 24, currentY + 2); currentY += 8;
+  // Hierarchical Breakdown
+  data.hierarchy.forEach(h => {
+    if (currentY > contentBottom - 30) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
     
-    data.wards.forEach(w => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(INK[0], INK[1], INK[2]); 
+    doc.text(h.constName.toUpperCase() + ' CONSTITUENCY', marginL, currentY);
+    
+    // Forms badge
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]);
+    doc.text('Evidence Forms: ' + h.formsCount, pageW - marginR, currentY, { align: 'right' });
+    currentY += 4;
+
+    // Const Candidates Table
+    var cRows = h.candidates.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), h.totalVotes > 0 ? ((c.votes / h.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
+    doc.autoTable({
+      startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: cRows, theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+      headStyles: { fontStyle: 'bold', fontSize: 7.5, textColor: SLATE, fillColor: [245, 245, 245] },
+      columnStyles: { 0: { cellWidth: 12, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 30, textColor: SLATE }, 3: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 15, halign: 'right', textColor: SLATE } },
+      margin: { left: marginL, right: marginR }
+    });
+    currentY = doc.lastAutoTable.finalY + 6;
+
+    // Ward Breakdown
+    h.wards.forEach(w => {
       if (currentY > contentBottom - 20) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(w.wardName.toUpperCase(), marginL, currentY); currentY += 5;
       
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
+      doc.text(w.wardName + ' Ward', marginL, currentY);
+      
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.text('Forms: ' + w.formsCount + '/' + w.totalStreams, pageW - marginR, currentY, { align: 'right' });
+      currentY += 4;
+
       var wRows = w.candidates.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), w.totalVotes > 0 ? ((c.votes / w.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
       doc.autoTable({
         startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: wRows, theme: 'plain',
-        styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 2.5, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
-        headStyles: { fontStyle: 'bold', fontSize: 7.5, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.2 } },
-        columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 35, textColor: SLATE }, 3: { cellWidth: 20, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 16, halign: 'right', textColor: SLATE } },
-        margin: { left: marginL, right: marginR }
+        styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.5, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+        headStyles: { fontStyle: 'bold', fontSize: 7, textColor: SLATE, fillColor: [250, 250, 250] },
+        columnStyles: { 0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 30, textColor: SLATE }, 3: { cellWidth: 18, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 15, halign: 'right', textColor: SLATE } },
+        margin: { left: marginL + 4, right: marginR } // Indented slightly
       });
       currentY = doc.lastAutoTable.finalY + 6;
     });
-  }
+    currentY += 4; // Space between constituencies
+  });
 
   for (var p = 1; p <= doc.internal.getNumberOfPages(); p++) { doc.setPage(p); drawFooter(); }
   
   var date = new Date(); var ymd = date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
-  var safePos = data.position.replace(/\s+/g, ''); var safeCon = data.constituency.replace(/\s+/g, '');
+  var safePos = data.position.replace(/\s+/g, ''); var safeCon = data.county.replace(/\s+/g, '');
   doc.save('TallyHub-' + safePos + '-' + safeCon + '-' + ymd + '.pdf');
 }
 // ================================================================
