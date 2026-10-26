@@ -403,6 +403,17 @@ body {
   position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center;
   color: white; font-weight: 700; font-size: 13px; gap: 6px; backdrop-filter: blur(2px);
 }
+    @media (max-width: 900px), (pointer: coarse) {
+  body { background-attachment: scroll !important; }
+  .stream-card, .position-card, .candidate-entry,
+  .sub-header, .entry-footer,
+  .app-loading-overlay, .success-overlay {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .stream-card, .position-card, .candidate-entry { background: rgba(255,255,255,0.92) !important; }
+  .sub-header, .entry-footer { background: rgba(226,232,240,0.97) !important; }
+}
   </style>
 </head>
 <body>
@@ -710,6 +721,19 @@ async function loadStreams(silent) {
 
     renderStreams();
 
+    // --- CRASH RECOVERY LOGIC ---
+    var pending = sessionStorage.getItem('pending_upload');
+    if (pending && !window.__recovered) {
+      window.__recovered = true;
+      try {
+        var pu = JSON.parse(pending);
+        toast('Page reloaded while taking the photo. Please try again.', 'info');
+        goToPositions(pu.s);
+        setTimeout(() => openUploadModal(pu.s, pu.p), 400);
+      } catch (e) { console.warn("Recovery failed", e); }
+    }
+    // ----------------------------
+
   } catch (e) {
     console.error("Load Streams Error:", e);
     if (!silent) toast('Connection error.', 'error');
@@ -717,7 +741,6 @@ async function loadStreams(silent) {
     if (!silent) document.getElementById('appLoader').classList.remove('active');
   }
 }
-
 async function loadCountingStatus() {
   try {
     const { data } = await db.from('config').select('value').eq('key', 'SubmissionOpen').single();
@@ -1202,16 +1225,54 @@ function openUploadModal(streamCode, position) {
   document.getElementById('galleryInput').value = '';
   
   document.getElementById('uploadOptionsModal').classList.add('active');
+  sessionStorage.setItem('pending_upload', JSON.stringify({ s: streamCode, p: position }));
 }
 
 function closeUploadModal() {
   document.getElementById('uploadOptionsModal').classList.remove('active');
 }
 
+var previewObjectUrl = null;
+
+async function shrinkImage(file, maxSize, quality) {
+  let bmp;
+  try {
+    // Decodes directly at reduced size (full-size bitmap never exists)
+    bmp = await createImageBitmap(file, {
+      resizeWidth: maxSize,
+      resizeQuality: 'medium',
+      imageOrientation: 'from-image'
+    });
+  } catch (e) {
+    // Fallback for older browsers
+    bmp = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image load failed')); };
+      img.src = url;
+    });
+  }
+
+  const scale = Math.min(1, maxSize / Math.max(bmp.width, bmp.height));
+  const w = Math.round(bmp.width * scale);
+  const h = Math.round(bmp.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  if (bmp.close) bmp.close();
+
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+  canvas.width = canvas.height = 0; // free canvas memory
+  if (!blob) throw new Error('Canvas failed');
+
+  return { file: new File([blob], 'form.jpg', { type: 'image/jpeg' }), width: w, height: h };
+}
+
 async function handleFormUpload(event) {
   var file = event.target.files[0];
   if (!file) return;
-
   closeUploadModal();
 
   if (!file.type.startsWith('image/')) {
@@ -1219,145 +1280,85 @@ async function handleFormUpload(event) {
     return;
   }
 
-  if (file.size > 5 * 1024 * 1024) {
-    toast('File is too large. Maximum size is 5MB.', 'error');
-    return;
-  }
+  // Compress FIRST, before anything else touches the photo
+  document.getElementById('appLoaderText').textContent = 'Preparing photo...';
+  document.getElementById('appLoader').classList.add('active');
 
-  // Use Object URL instead of readAsDataURL (Saves RAM)
-  var objectUrl = URL.createObjectURL(file);
-  
-  var img = new Image();
-  img.onload = function() {
-    if (img.width > img.height) {
+  try {
+    const result = await shrinkImage(file, 1200, 0.8);
+
+    if (result.width > result.height) {
       toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
-      URL.revokeObjectURL(objectUrl);
       return;
     }
 
-    currentFormFile = file;
-    
-    document.getElementById('previewImage').src = objectUrl;
-    document.getElementById('uploadStatusText').innerHTML = '<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Image looks good. Ready to upload.</span>';
+    currentFormFile = result.file; // already small (~200-400 KB)
+
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = URL.createObjectURL(result.file);
+    document.getElementById('previewImage').src = previewObjectUrl;
+    document.getElementById('uploadStatusText').innerHTML =
+      '<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Image looks good. Ready to upload.</span>';
     document.getElementById('confirmUploadBtn').disabled = false;
     document.getElementById('formPreviewModal').classList.add('active');
-  };
-  img.src = objectUrl;
+  } catch (err) {
+    console.error(err);
+    toast('Could not process photo. Try again or choose from gallery.', 'error');
+  } finally {
+    document.getElementById('appLoader').classList.remove('active');
+  }
 }
 
 function retakePhoto() {
   document.getElementById('formPreviewModal').classList.remove('active');
   openUploadModal(currentFormStream, currentFormPos);
 }
-// Shrinks while decoding, so the full-size bitmap never exists in RAM
-function compressImage(file, maxSize, quality) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
 
-      if (width > height && width > maxSize) {
-        height *= maxSize / width;
-        width = maxSize;
-      } else if (height > maxSize) {
-        width *= maxSize / height;
-        height = maxSize;
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      URL.revokeObjectURL(url); // Free memory
-
-      canvas.toBlob((blob) => {
-        canvas.width = 0; 
-        canvas.height = 0; // Free canvas memory immediately
-        if (blob) {
-          resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }));
-        } else {
-          reject(new Error("Canvas failed"));
-        }
-      }, 'image/jpeg', quality);
-    };
-    
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Image load failed"));
-    };
-    
-    img.src = url;
-  });
-}
   async function executeFormUpload() {
   if (!currentFormFile) return;
-  
+
   var btn = document.getElementById('confirmUploadBtn');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-
-  let fileToUpload = currentFormFile;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
 
   try {
-    // 1. Compress the image using the new function
-    try {
-      fileToUpload = await compressImage(currentFormFile, 1200, 0.8);
-    } catch (err) {
-      console.warn('Compression failed, uploading original', err);
-      toast('Uploading original photo.', 'info');
-      fileToUpload = currentFormFile;
-    }
-
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
-
-    // 2. Upload to Supabase Storage
     var fileName = currentFormStream + '_' + currentFormPos.replace(/\s+/g, '') + '.jpg';
     const { error: uploadError } = await db.storage
       .from('form-photos')
-      .upload(fileName, fileToUpload, { upsert: true, contentType: 'image/jpeg' }); 
-
+      .upload(fileName, currentFormFile, { upsert: true, contentType: 'image/jpeg' });
     if (uploadError) throw new Error(uploadError.message);
 
-    // 3. Save record to Database
     const { error: dbError } = await db.from('form_photos').upsert({
       stream_code: currentFormStream,
       position: currentFormPos,
       photo_url: fileName,
       uploaded_by: USER.name
     }, { onConflict: 'stream_code,position' });
-
     if (dbError) throw new Error(dbError.message);
 
-    // 4. SAFE THUMBNAIL (Only if file is small enough to prevent memory crashes)
+    // Tiny thumbnail cache; never allowed to break the upload
     try {
-      if (fileToUpload.size < 1024 * 1024) { // Only process if under 1MB
-        const thumb = await compressImage(fileToUpload, 150, 0.6);
-        const dataUrl = await new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result);
-          r.onerror = rej;
-          r.readAsDataURL(thumb);
-        });
-        localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, dataUrl);
-      } else {
-        localStorage.removeItem('form_preview_' + currentFormStream + '_' + currentFormPos);
-      }
-    } catch (e) {
-      console.warn('Thumbnail skipped due to memory', e);
-    }
+      const thumb = await shrinkImage(currentFormFile, 150, 0.6);
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result);
+        r.onerror = rej;
+        r.readAsDataURL(thumb.file);
+      });
+      localStorage.setItem('form_preview_' + currentFormStream + '_' + currentFormPos, dataUrl);
+    } catch (e) { console.warn('Thumbnail skipped', e); }
 
     toast('Form uploaded securely!', 'success');
     document.getElementById('formPreviewModal').classList.remove('active');
     
-    // 5. Update UI immediately
+    // Cleanup
+    if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
+    document.getElementById('previewImage').src = '';
+    currentFormFile = null;
+    sessionStorage.removeItem('pending_upload');
+
     if (!FORMS[currentFormStream]) FORMS[currentFormStream] = {};
     FORMS[currentFormStream][currentFormPos] = true;
-    
     goToPositions(currentFormStream);
 
   } catch (err) {
