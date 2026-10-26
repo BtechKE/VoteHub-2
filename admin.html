@@ -4197,14 +4197,14 @@ function renderResults() {
         return vB - vA;
     });
     gridHtml += sorted.map(c => buildCard(c, c.id, 'Centre', `adminDrillTo('stream', '${ADMIN_DRILL_CONST_ID}', '${ADMIN_DRILL_WARD}', '${c.id}')`)).join('');
-  } else if (ADMIN_DRILL_LEVEL === 'stream') {
+   } else if (ADMIN_DRILL_LEVEL === 'stream') {
     var streams = STREAMS.filter(s => s.centre_id === ADMIN_DRILL_CENTRE);
     var sorted = [...streams].sort((a,b) => {
         var vA = Object.values(RESULTS_DATA.votesByStream[CURRENT_RESULT_POS][a.code]||{}).reduce((s,v)=>s+v,0);
         var vB = Object.values(RESULTS_DATA.votesByStream[CURRENT_RESULT_POS][b.code]||{}).reduce((s,v)=>s+v,0);
         return vB - vA;
     });
-    gridHtml += sorted.map(s => buildCard({name: 'STR '+s.stream_number, code: s.code}, s.code, 'Stream', `alert('Stream detail coming soon')`)).join('');
+    gridHtml += sorted.map(s => buildCard({name: 'STR '+s.stream_number, code: s.code}, s.code, 'Stream', `openAdminStreamDetail('${s.code}')`)).join('');
   }
   gridHtml += '</div>';
 
@@ -5119,6 +5119,68 @@ function adminDrillBack(level) {
     ADMIN_DRILL_CENTRE = ''; 
   } 
   renderResults(); 
+}
+  async function openAdminStreamDetail(streamCode) {
+  var sheet = document.getElementById('sheetContent');
+  var position = CURRENT_RESULT_POS;
+
+  // Find context for the header
+  var stream = STREAMS.find(s => s.code === streamCode);
+  var centre = stream ? CENTRES.find(c => c.id === stream.centre_id) : null;
+  var ward = centre ? WARDS.find(w => w.id === centre.ward_id) : null;
+
+  var label = stream ? 'STR ' + String(stream.stream_number).padStart(2, '0') : streamCode;
+  var centreName = centre ? centre.name : '';
+  var wardName = ward ? ward.name : '';
+
+  document.getElementById('sheetBg').classList.add('active');
+  sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="loading-inline"><i class="fas fa-spinner"></i>Loading submission…</div>';
+
+  try {
+    const { data, error } = await db.from('results')
+      .select('votes, submitted_by, created_at, candidate_code')
+      .eq('stream_code', streamCode).eq('position', position);
+
+    if (error) throw error;
+
+    if (!data || !data.length) {
+      sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty"><div class="empty-title">Not submitted yet</div></div>';
+      return;
+    }
+
+    const mappedResults = data.map(r => {
+        var c = CANDIDATES.find(x => x.code === r.candidate_code) || {};
+        return {
+            candidateName: c.name || r.candidate_code, 
+            party: c.party || 'Unknown', 
+            photo_url: normalizeImageUrl(c.photo_url),
+            votes: r.votes
+        };
+    }).sort((a, b) => b.votes - a.votes);
+
+    // Fetch the Signed URL for the form (if it exists)
+    var formPhotoUrl = '';
+    var fileName = TRACKER_FORMS[streamCode + '_' + position];
+    if (fileName) {
+      const { data: signedData } = await db.storage.from('form-photos').createSignedUrl(fileName, 600);
+      if (signedData) formPhotoUrl = signedData.signedUrl;
+    }
+
+    const res = {
+        submitted: true, 
+        submittedBy: data[0].submitted_by, 
+        submittedByName: data[0].submitted_by, 
+        submittedAt: data[0].created_at ? new Date(data[0].created_at).toLocaleString() : 'Unknown time', 
+        results: mappedResults
+    };
+    
+    // This uses the exact same rendering function as the Live Tracker
+    renderTrackerPipResult(res, position, label, centreName, wardName, formPhotoUrl);
+
+  } catch (e) {
+    console.error("Stream Detail Error:", e);
+    sheet.innerHTML = '<div class="empty">Error loading results: ' + esc(e.message) + '</div>';
+  }
 }
 </script>
 </body>
