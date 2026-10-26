@@ -4150,6 +4150,7 @@ function backToMCAGrid() {
 //  ADMIN — SUBMISSION TRACKER
 // ================================================================
 var TRACKER_DATA = null;
+var TRACKER_FORMS = {}; // Tracks which stream/position combos have photos
 var POSITION_SHORT_MAP = {
   'President': 'P',
   'Governor':  'G',
@@ -4171,22 +4172,29 @@ async function loadSubmissionMatrix() {
   try {
     var activeStreamCodes = STREAMS.map(s => s.code);
     
-    // If no streams in this county, clear the tracker immediately
     if (activeStreamCodes.length === 0) {
       TRACKER_DATA = { positions: POSITIONS, groups: [], summary: { totalStreams: 0, totalCells: 0, submittedCells: 0, fullyReportedStreams: 0 } };
       populateTrackerWards(); renderTracker(); updateTrackerBadge();
       return;
     }
 
-    // ONLY fetch results for this county's streams
-    const { data: results } = await db.from('results').select('stream_code, position').in('stream_code', activeStreamCodes);
+    // FETCH RESULTS AND FORMS
+    const [ { data: results }, { data: formsData } ] = await Promise.all([
+      db.from('results').select('stream_code, position').in('stream_code', activeStreamCodes),
+      db.from('form_photos').select('stream_code, position, photo_url').in('stream_code', activeStreamCodes)
+    ]);
+
+    // Build the FORMS dictionary
+    TRACKER_FORMS = {};
+    (formsData || []).forEach(f => {
+        TRACKER_FORMS[f.stream_code + '_' + f.position] = f.photo_url;
+    });
 
     var submitted = {};
     (results || []).forEach(r => {
       if (!submitted[r.stream_code]) submitted[r.stream_code] = {};
       submitted[r.stream_code][r.position] = true;
     });
-
     var totalStreams = STREAMS.length;
     var totalCells = totalStreams * POSITIONS.length;
     var submittedCells = (results || []).length;
@@ -4333,24 +4341,21 @@ function renderTracker() {
       html += '<div class="stream-code">' + esc(st.code) + '</div></div>';
       
       html += '<div class="track-pips">';
-      TRACKER_DATA.positions.forEach(pos => {
+        TRACKER_DATA.positions.forEach(pos => {
         var hit = st.statuses[pos];
-        var short = POSITION_SHORT_MAP[pos] || pos.charAt(0);
+        var short = POSITION_SHORT[pos] || pos.charAt(0);
         var tip = hit ? pos + ' · tap to view results' : pos + ' · not submitted yet';
         
+        // Check if this specific stream/position has a photo
+        var hasForm = !!TRACKER_FORMS[st.code + '_' + pos];
+        var formBadge = hasForm ? '<span style="position:absolute;bottom:-3px;right:-3px;background:var(--blue);color:white;border-radius:50%;width:12px;height:12px;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);"><i class="fas fa-camera" style="font-size:6px;"></i></span>' : '';
+        
         if (hit) {
-          html += '<button type="button" class="track-pip done" title="' + escAttr(tip) + '" onclick="openTrackerPip(\'' + escAttr(st.code) + '\',\'' + escAttr(pos) + '\')">' + short + '</button>';
+          html += '<button type="button" class="track-pip done" style="position:relative;" title="' + escAttr(tip) + '" onclick="openTrackerPip(\'' + escAttr(st.code) + '\',\'' + escAttr(pos) + '\')">' + short + formBadge + '</button>';
         } else {
-          html += '<span class="track-pip pending" title="' + escAttr(tip) + '">' + short + '</span>';
+          html += '<span class="track-pip pending" style="position:relative;" title="' + escAttr(tip) + '">' + short + '</span>';
         }
       });
-      html += '</div>';
-      html += '<div class="stream-progress">' + st.submittedCount + '/' + TRACKER_DATA.positions.length + '</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-  });
-
   if (!html) {
     html = '<div class="empty"><i class="fas fa-inbox"></i><div>No streams match the current filters.</div></div>';
   }
@@ -4376,7 +4381,6 @@ async function openTrackerPip(streamCode, position) {
   sheet.innerHTML = '<div class="sheet-head"><div><div class="sheet-title">' + esc(position) + ' · ' + esc(label) + '</div><div class="sheet-sub">' + esc(centreName) + ' · ' + esc(wardName) + ' Ward</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="loading-inline"><i class="fas fa-spinner"></i>Loading submission…</div>';
 
   try {
-    // THE FIX: We ONLY fetch the results. No joins needed!
     const { data, error } = await db.from('results')
       .select('votes, submitted_by, created_at, candidate_code')
       .eq('stream_code', streamCode).eq('position', position);
@@ -4388,16 +4392,23 @@ async function openTrackerPip(streamCode, position) {
       return;
     }
 
-    // We use the global CANDIDATES array to build the results
     const mappedResults = data.map(r => {
         var c = CANDIDATES.find(x => x.code === r.candidate_code) || {};
         return {
             candidateName: c.name || r.candidate_code, 
             party: c.party || 'Unknown', 
-            photo_url: normalizeImageUrl(c.photo_url), // Normalized directly from the global array
+            photo_url: normalizeImageUrl(c.photo_url),
             votes: r.votes
         };
     }).sort((a, b) => b.votes - a.votes);
+
+    // Fetch the Signed URL for the form
+    var formPhotoUrl = '';
+    var fileName = TRACKER_FORMS[streamCode + '_' + position];
+    if (fileName) {
+      const { data: signedData } = await db.storage.from('form-photos').createSignedUrl(fileName, 600);
+      if (signedData) formPhotoUrl = signedData.signedUrl;
+    }
 
     const res = {
         submitted: true, 
@@ -4407,14 +4418,14 @@ async function openTrackerPip(streamCode, position) {
         results: mappedResults
     };
     
-    renderTrackerPipResult(res, position, label, centreName, wardName);
+    renderTrackerPipResult(res, position, label, centreName, wardName, formPhotoUrl);
 
   } catch (e) {
     console.error("PIP Error:", e);
     sheet.innerHTML = '<div class="empty">Error loading results: ' + esc(e.message) + '</div>';
   }
 }
-function renderTrackerPipResult(res, position, label, centreName, wardName) {
+function renderTrackerPipResult(res, position, label, centreName, wardName, formPhotoUrl) {
   var sheet = document.getElementById('sheetContent'); 
   var total = (res.results || []).reduce(function (s, r) { return s + (Number(r.votes) || 0); }, 0);
   
@@ -4433,7 +4444,6 @@ function renderTrackerPipResult(res, position, label, centreName, wardName) {
     var initial = c.candidateName ? c.candidateName.charAt(0).toUpperCase() : '?'; 
     var photoHtml = c.photo_url ? '<img src="' + escAttr(c.photo_url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.textContent=\'' + escAttr(initial) + '\'">' : initial;
     
-    // THE FIX: Using the Admin's 'result-row' CSS classes
     return '<div class="result-row' + (isLead ? ' leader' : '') + '" style="margin-bottom:8px;cursor:default;">' +
       '<div class="avatar-wrap' + (c.photo_url ? '' : ' no-photo') + '">' + 
         photoHtml + 
@@ -4443,10 +4453,19 @@ function renderTrackerPipResult(res, position, label, centreName, wardName) {
         '<div class="result-name">' + esc(c.candidateName) + '</div>' +
         '<div class="result-party">' + esc(c.party) + '</div>' +
       '</div>' +
-      '<div class="result-votes">' + votes.toLocaleString() + '</div>' +
+      '<div class="result-votes" style="color:var(--text);">' + votes.toLocaleString() + '</div>' +
       '<div class="result-pct">' + pct + '%</div>' +
     '</div>';
   }).join('');
+
+  var formBtnHtml = '';
+  if (formPhotoUrl) {
+    formBtnHtml = `<div style="margin-top: 16px;">
+      <a href="${formPhotoUrl}" target="_blank" class="btn" style="width:100%; text-decoration:none; padding:14px; border-radius:12px; font-weight:800; background:var(--primary) !important; color:var(--text) !important; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);">
+        <i class="fas fa-file-image" style="font-size:16px;"></i> View Statutory Form
+      </a>
+    </div>`;
+  }
   
   sheet.innerHTML = 
     '<div class="sheet-head">' +
@@ -4455,18 +4474,13 @@ function renderTrackerPipResult(res, position, label, centreName, wardName) {
       '<button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button>' +
     '</div>' + 
     infoHtml + 
-    rowsHtml;
+    rowsHtml +
+    formBtnHtml;
 }
-
 function closeSheet() {
   document.getElementById('sheetBg').classList.remove('active');
 }
 
-// ================================================================
-//  EXPORT PDF & OTHERS (Mocked for UI stability)
-// ================================================================
-
-  // ================================================================
 //  EXPORT PDF
 // ================================================================
 var exportSelectedPos = null;
