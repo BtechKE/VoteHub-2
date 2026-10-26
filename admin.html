@@ -5079,6 +5079,47 @@ async function deleteConstituency(id) {
 
   return '';
 }
+
+  function tintBg(hex, alpha) {
+  if (!hex) return '';
+  hex = String(hex).trim();
+  if (hex.charAt(0) === '#') hex = hex.slice(1);
+  if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  if (hex.length !== 6) return '';
+  var r = parseInt(hex.slice(0, 2), 16);
+  var g = parseInt(hex.slice(2, 4), 16);
+  var b = parseInt(hex.slice(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return '';
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha || 0.07) + ')';
+}
+  function adminDrillReset() { 
+  ADMIN_DRILL_LEVEL = 'constituency'; 
+  ADMIN_DRILL_CONST_ID = ''; 
+  ADMIN_DRILL_WARD = ''; 
+  ADMIN_DRILL_CENTRE = ''; 
+  renderResults(); 
+}
+
+function adminDrillTo(level, constId, wardId, centreId) { 
+  ADMIN_DRILL_LEVEL = level; 
+  if(constId) ADMIN_DRILL_CONST_ID = constId; 
+  if(wardId) ADMIN_DRILL_WARD = wardId; 
+  if(centreId) ADMIN_DRILL_CENTRE = centreId; 
+  renderResults(); 
+}
+
+function adminDrillBack(level) { 
+  if(level === 'ward') { 
+    ADMIN_DRILL_LEVEL = 'ward'; 
+    ADMIN_DRILL_WARD = ''; 
+    ADMIN_DRILL_CENTRE = ''; 
+  } 
+  if(level === 'centre') { 
+    ADMIN_DRILL_LEVEL = 'centre'; 
+    ADMIN_DRILL_CENTRE = ''; 
+  } 
+  renderResults(); 
+}
 </script>
 </body>
 </html>
