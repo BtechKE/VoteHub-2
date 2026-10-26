@@ -2193,7 +2193,10 @@ body::after {
         </button>
       </div>
 
-      <div class="tracker-filters" id="trackerFilters">
+         <div class="tracker-filters" id="trackerFilters">
+        <select id="trackerConstituency" onchange="trackerWardOptions(); renderTracker();">
+          <option value="">All Constituencies</option>
+        </select>
         <select id="trackerWard" onchange="trackerCentreOptions(); renderTracker();">
           <option value="">All Wards</option>
         </select>
@@ -4398,7 +4401,7 @@ async function loadSubmissionMatrix() {
           };
         });
 
-        groups.push({ wardId: w.id, wardName: w.name, centreId: c.id, centreName: c.name, streams: streamRows });
+        groups.push({constituencyId: w.constituency_id, wardId: w.id, wardName: w.name, centreId: c.id, centreName: c.name, streams: streamRows });
       });
     });
 
@@ -4419,27 +4422,53 @@ async function loadSubmissionMatrix() {
 
 function populateTrackerWards() {
   if (!TRACKER_DATA) return;
+  var constSel = document.getElementById('trackerConstituency');
+  var constSet = {};
+  
+  // Populate Constituencies
+  TRACKER_DATA.groups.forEach(g => { 
+    constSet[g.constituencyId] = CONSTITUENCIES.find(c=>c.id===g.constituencyId)?.name || 'Unknown'; 
+  });
+  
+  var current = constSel.value;
+  constSel.innerHTML = '<option value="">All Constituencies</option>' +
+    Object.keys(constSet).sort((a,b) => constSet[a].localeCompare(constSet[b])).map(id => 
+      '<option value="' + escAttr(id) + '">' + esc(constSet[id]) + '</option>'
+    ).join('');
+  
+  if (current) constSel.value = current;
+  trackerWardOptions(); // Call the next level down
+}
+  function trackerWardOptions() {
+  if (!TRACKER_DATA) return;
+  var constFilter = document.getElementById('trackerConstituency').value;
   var sel = document.getElementById('trackerWard');
   var wardSet = {};
-  TRACKER_DATA.groups.forEach(g => { wardSet[g.wardId] = g.wardName; });
+  
+  TRACKER_DATA.groups.forEach(g => {
+    if (constFilter && g.constituencyId !== constFilter) return;
+    wardSet[g.wardId] = g.wardName;
+  });
   
   var current = sel.value;
   sel.innerHTML = '<option value="">All Wards</option>' +
     Object.keys(wardSet).sort((a,b) => wardSet[a].localeCompare(wardSet[b])).map(id => 
       '<option value="' + escAttr(id) + '">' + esc(wardSet[id]) + '</option>'
     ).join('');
-  
-  if (current) sel.value = current;
-  trackerCentreOptions();
+    
+  if (current && wardSet[current]) sel.value = current;
+  trackerCentreOptions(); // Call the next level down
 }
 
 function trackerCentreOptions() {
   if (!TRACKER_DATA) return;
+  var constFilter = document.getElementById('trackerConstituency').value;
   var wardFilter = document.getElementById('trackerWard').value;
   var sel = document.getElementById('trackerCentre');
   var centreSet = {};
   
   TRACKER_DATA.groups.forEach(g => {
+    if (constFilter && g.constituencyId !== constFilter) return;
     if (wardFilter && g.wardId !== wardFilter) return;
     centreSet[g.centreId] = g.centreName;
   });
@@ -4477,7 +4506,10 @@ function renderTracker() {
     '<div class="tracker-stat pct"><div class="num">' + pct + '%</div><div class="lbl">Overall</div></div>';
 
   // 2. Filter groups
+  // 2. Filter groups
+  var constFilter = document.getElementById('trackerConstituency').value;
   var visibleGroups = TRACKER_DATA.groups.filter(g => {
+    if (constFilter && g.constituencyId !== constFilter) return false;
     if (wardFilter && g.wardId !== wardFilter) return false;
     if (centreFilter && g.centreId !== centreFilter) return false;
     return true;
