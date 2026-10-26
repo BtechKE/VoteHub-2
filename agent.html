@@ -1210,44 +1210,44 @@ function closeUploadModal() {
 
 async function handleFormUpload(event) {
   var file = event.target.files[0];
-  if (!file) return; // User cancelled camera
+  if (!file) return;
 
   closeUploadModal();
 
-  // 1. Validate File Type
   if (!file.type.startsWith('image/')) {
     toast('Invalid file. Please upload an image.', 'error');
     return;
   }
 
-  // 2. Validate File Size (5MB limit)
   if (file.size > 5 * 1024 * 1024) {
     toast('File is too large. Maximum size is 5MB.', 'error');
     return;
   }
 
-  // 3. Preview & Validate Aspect Ratio
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var img = new Image();
-    img.onload = function() {
-      // Portrait Check (Width must be less than Height)
-      if (img.width > img.height) {
-        toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
-        return;
-      }
+  // USE OBJECT URL (Zero RAM usage)
+  var objectUrl = URL.createObjectURL(file);
+  
+  var img = new Image();
+  img.onload = function() {
+    // Portrait Check
+    if (img.width > img.height) {
+      toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
+      URL.revokeObjectURL(objectUrl);
+      return;
+    }
 
-      currentFormFile = file;
-      
-      // Show Preview Modal
-      document.getElementById('previewImage').src = e.target.result;
-      document.getElementById('uploadStatusText').innerHTML = '<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Image looks good. Ready to upload.</span>';
-      document.getElementById('confirmUploadBtn').disabled = false;
-      document.getElementById('formPreviewModal').classList.add('active');
-    };
-    img.src = e.target.result;
+    currentFormFile = file;
+    
+    document.getElementById('previewImage').src = objectUrl;
+    document.getElementById('uploadStatusText').innerHTML = '<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Image looks good. Ready to upload.</span>';
+    document.getElementById('confirmUploadBtn').disabled = false;
+    document.getElementById('formPreviewModal').classList.add('active');
   };
-  reader.readAsDataURL(file);
+  img.onerror = function() {
+    toast('Could not read image file.', 'error');
+    URL.revokeObjectURL(objectUrl);
+  };
+  img.src = objectUrl;
 }
 
 function retakePhoto() {
