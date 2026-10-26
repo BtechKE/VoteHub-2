@@ -1956,6 +1956,50 @@ body::after {
       justify-content: center;
       align-items: center;
     }
+    /* ================================================================
+       DRILL DOWN CARDS (Admin Fix)
+    ================================================================ */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; cursor: pointer; position: relative; transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; gap: 12px; }
+    .card:hover { transform: translateY(-2px); border-color: var(--blue); box-shadow: 0 12px 32px -12px var(--blue-glow); }
+    .card:active { transform: scale(0.985); }
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .card-name { font-size: 14.5px; font-weight: 700; color: var(--ink); line-height: 1.25; letter-spacing: -0.2px; }
+    .card-sub { font-size: 11.5px; color: var(--slate); margin-top: 2px; font-weight: 500; }
+    
+    .card-leader { display: flex; align-items: center; gap: 10px; }
+    .card-leader-info { min-width: 0; flex: 1; }
+    .card-leader-name { font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-leader-party { font-size: 11.5px; color: var(--slate); margin-top: 1px; }
+    
+    .card-numbers { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .card-votes { font-size: 18px; font-weight: 800; color: var(--ink); letter-spacing: -0.4px; font-variant-numeric: tabular-nums; line-height: 1; }
+    .card-pct { font-size: 13px; font-weight: 700; color: var(--blue); font-variant-numeric: tabular-nums; }
+    
+    .card-bar { height: 5px; background: var(--canvas); border-radius: 20px; overflow: hidden; }
+    .card-bar-fill { height: 100%; background: linear-gradient(90deg, var(--green) 0%, var(--green-dark) 100%); border-radius: 20px; transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1); }
+    
+    .card-empty-body { text-align: center; padding: 14px 0; color: var(--slate); font-size: 12.5px; }
+    .card-empty-body i { font-size: 20px; color: var(--border-2); display: block; margin-bottom: 6px; }
+
+    .avatar-wrap { position: relative; width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; background: linear-gradient(135deg, rgba(165, 207, 131, 0.35) 0%, rgba(126, 174, 92, 0.25) 100%); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; color: #4A7C3A; border: 2px solid rgba(255, 255, 255, 0.7); box-shadow: 0 2px 8px rgba(26, 26, 25, 0.08); }
+    .avatar-wrap img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+    .avatar-wrap.with-crown { width: 44px; height: 44px; }
+    .avatar-crown { position: absolute; bottom: -3px; right: -3px; width: 18px; height: 18px; border-radius: 50%; background: #7EAE5C; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 9px; border: 2px solid #FFFFFF; box-shadow: 0 2px 6px rgba(126, 174, 92, 0.35); }
+    
+    /* Premium Floating Shadows */
+    .card {
+      background: #FFFFFF !important;
+      border: 1px solid rgba(0, 0, 0, 0.04) !important;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+      transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    }
+    .card:hover {
+      transform: translateY(-4px) !important;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+      border-color: rgba(21, 145, 220, 0.2) !important;
+    }
+    
 </style>
 </head>
 <body>
