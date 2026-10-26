@@ -5374,38 +5374,33 @@ function adminDrillBack(level) {
     sheet.innerHTML = '<div class="empty">Error loading results: ' + esc(e.message) + '</div>';
   }
 }
-  // ================================================================
+ // ================================================================
 //  CUSTOM PREMIUM DROPDOWN ENGINE
 // ================================================================
 var activeSelectElement = null;
+var isOpeningSelect = false; 
 
-document.addEventListener('click', function(e) {
-  var select = e.target.closest('select');
-  if (!select) return;
-
-  // Only trigger custom UI on mobile/tablets
-  if (window.innerWidth > 768) return;
-
-  e.preventDefault(); // Stop the native OS dropdown
+function openCustomSelect(select) {
+  if (isOpeningSelect) return;
+  isOpeningSelect = true;
   activeSelectElement = select;
   
-  // Find a title based on the label or the select's name
   var title = select.getAttribute('data-title') || 'Select Option';
   document.getElementById('customSelectTitle').textContent = title;
 
   var list = document.getElementById('customSelectList');
   list.innerHTML = '';
 
-  // Loop through all <option> tags inside the select
   Array.from(select.options).forEach(function(opt) {
     var isSelected = opt.value === select.value;
     var div = document.createElement('div');
     div.className = 'custom-select-option' + (isSelected ? ' selected' : '');
     div.innerHTML = `<span>${opt.text}</span> <i class="fas fa-check"></i>`;
     
-    div.onclick = function() {
+    div.onclick = function(e) {
+      e.stopPropagation();
       select.value = opt.value;
-      // Trigger the original onchange event attached to the <select>
+      // Trigger the original onchange event
       select.dispatchEvent(new Event('change'));
       closeCustomSelect();
     };
@@ -5413,11 +5408,35 @@ document.addEventListener('click', function(e) {
   });
 
   document.getElementById('customSelectModal').classList.add('active');
-});
+  
+  // Reset guard after animation
+  setTimeout(() => { isOpeningSelect = false; }, 300);
+}
+
+// 1. INTERCEPT MOBILE TOUCH (Stops the native Android/iOS menu)
+document.addEventListener('touchstart', function(e) {
+  var select = e.target.closest('select');
+  if (!select) return;
+  if (window.innerWidth > 768) return; // Only on mobile
+  
+  e.preventDefault(); // THIS STOPS THE NATIVE MENU
+  openCustomSelect(select);
+}, { passive: false, capture: true });
+
+// 2. INTERCEPT DESKTOP CLICKS / MOBILE EMULATORS
+document.addEventListener('mousedown', function(e) {
+  var select = e.target.closest('select');
+  if (!select) return;
+  if (window.innerWidth > 768) return;
+  
+  e.preventDefault(); 
+  openCustomSelect(select);
+}, { capture: true });
 
 function closeCustomSelect() {
   document.getElementById('customSelectModal').classList.remove('active');
   activeSelectElement = null;
+  isOpeningSelect = false;
 }
 </script>
 </body>
