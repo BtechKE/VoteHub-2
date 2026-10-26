@@ -4797,20 +4797,17 @@ async function generatePDF() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
 
   try {
-    // 1. Fetch all data for the current county
     const [ { data: cands }, { data: resultsData }, { data: formsData } ] = await Promise.all([
       db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY).eq('position', pos), 
       db.from('results').select('stream_code, candidate_code, votes').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos),
       db.from('form_photos').select('stream_code').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos)
     ]);
 
-    // 2. Build Lookup Maps
     var candMap = {}; (cands||[]).forEach(c => candMap[c.code] = c);
     var streamMap = {}; STREAMS.forEach(s => streamMap[s.code] = s);
     var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
     var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
 
-    // 3. Aggregate Votes & Forms
     var totalByCand = {}, votesByWard = {}, votesByCentre = {};
     var formsByWard = {}, formsByCentre = {};
     
@@ -4819,15 +4816,12 @@ async function generatePDF() {
       var centre = centreMap[stream.centre_id]; if(!centre) return;
       var ward = wardMap[centre.ward_id]; if(!ward) return;
 
-      // Totals
       if(!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
       totalByCand[r.candidate_code] += r.votes;
 
-      // Ward
       if(!votesByWard[ward.id]) votesByWard[ward.id] = {};
       votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
 
-      // Centre
       if(!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
       votesByCentre[centre.id][r.candidate_code] = (votesByCentre[centre.id][r.candidate_code]||0) + r.votes;
     });
@@ -4841,21 +4835,17 @@ async function generatePDF() {
       formsByCentre[centre.id] = (formsByCentre[centre.id]||0) + 1;
     });
 
-    // 4. Build Overall Leaderboard
     var leaderboard = (cands||[]).map(c => ({
       name: c.name, party: c.party, votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
     var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
 
-    // 5. Build the Adaptive Hierarchy
     var hierarchy = [];
     
-    // RESPECT ADMIN DRILL DOWN SCOPE
     var scopeConsts = (ADMIN_DRILL_LEVEL !== 'constituency' && ADMIN_DRILL_CONST_ID) ? CONSTITUENCIES.filter(c => c.id === ADMIN_DRILL_CONST_ID) : CONSTITUENCIES;
     var scopeWards = (ADMIN_DRILL_LEVEL === 'centre' || ADMIN_DRILL_LEVEL === 'stream') && ADMIN_DRILL_WARD ? WARDS.filter(w => w.id === ADMIN_DRILL_WARD) : WARDS;
 
     if (pos === 'MCA') {
-      // MCA LOGIC: Group by Ward, then by Centre
       scopeWards.forEach(w => {
         var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
           name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
@@ -4874,11 +4864,8 @@ async function generatePDF() {
         hierarchy.push({ name: w.name, type: 'Ward', candidates: wCands, totalVotes: wTotal, subAreas: centresArr, formsCount: formsByWard[w.id] || 0 });
       });
     } else {
-      // GOVERNOR/MP LOGIC: Group by Constituency, then by Ward
       scopeConsts.forEach(cst => {
         var cWards = scopeWards.filter(w => w.constituency_id === cst.id);
-        
-        // Calculate Const Totals
         var cVotes = {};
         cWards.forEach(w => {
           if(votesByWard[w.id]) {
@@ -4907,6 +4894,16 @@ async function generatePDF() {
       });
     }
 
+    // --- NEW LOGIC: DECIDE IF WE SHOW OVERALL LEADERBOARD ---
+    var showOverall = false;
+    if (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
+      showOverall = true; 
+    } else if (pos === 'MP' && ADMIN_DRILL_LEVEL !== 'constituency') {
+      showOverall = true; // Show if they drilled into a specific constituency
+    } else if (pos === 'MCA' && (ADMIN_DRILL_LEVEL === 'centre' || ADMIN_DRILL_LEVEL === 'stream')) {
+      showOverall = true; // Show if they drilled into a specific ward
+    }
+
     var data = {
       position: pos,
       county: CONFIG.County || COUNTIES.find(c=>c.id===CURRENT_COUNTY)?.name || 'County',
@@ -4915,7 +4912,8 @@ async function generatePDF() {
       hierarchy: hierarchy,
       reported: new Set((resultsData||[]).map(r => r.stream_code)).size,
       totalStreams: STREAMS.length,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      showOverall: showOverall // Pass the flag
     };
 
     buildPositionPDF(data);
@@ -4964,7 +4962,6 @@ function buildPositionPDF(data) {
   var currentY = contentTop;
   drawHeader();
 
-  // Title Section
   doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(data.position.toUpperCase(), marginL, currentY + 4);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.county + ' County', marginL, currentY + 11);
   doc.setFontSize(8.5); doc.text(timestamp + ' · ' + data.reported + ' of ' + data.totalStreams + ' streams reported', marginL, currentY + 17);
@@ -4972,22 +4969,24 @@ function buildPositionPDF(data) {
 
   doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(1); doc.line(marginL, currentY, pageW - marginR, currentY); currentY += 8;
 
-  // Overall Leaderboard
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('OVERALL LEADERBOARD', marginL, currentY);
-  currentY += 6;
+  // ONLY SHOW OVERALL LEADERBOARD IF FLAG IS TRUE
+  if (data.showOverall) {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('OVERALL LEADERBOARD', marginL, currentY);
+    currentY += 6;
 
-  if (!data.leaderboard.length) {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
-  } else {
-    var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
-    doc.autoTable({
-      startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
-      styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
-      headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
-      columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
-      margin: { left: marginL, right: marginR }
-    });
-    currentY = doc.lastAutoTable.finalY + 8;
+    if (!data.leaderboard.length) {
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
+    } else {
+      var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
+      doc.autoTable({
+        startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
+        styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+        headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
+        columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
+        margin: { left: marginL, right: marginR }
+      });
+      currentY = doc.lastAutoTable.finalY + 8;
+    }
   }
 
   // Hierarchical Breakdown
@@ -4997,12 +4996,10 @@ function buildPositionPDF(data) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(INK[0], INK[1], INK[2]); 
     doc.text(h.name.toUpperCase() + ' ' + h.type.toUpperCase(), marginL, currentY);
     
-    // Forms badge
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]);
     doc.text('Evidence Forms: ' + h.formsCount, pageW - marginR, currentY, { align: 'right' });
     currentY += 4;
 
-    // Main Area Candidates Table
     if (h.candidates.length === 0) {
        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
        doc.text('No votes recorded yet.', marginL, currentY + 2);
@@ -5019,14 +5016,16 @@ function buildPositionPDF(data) {
       currentY = doc.lastAutoTable.finalY + 6;
     }
 
-    // Sub-Areas Breakdown (Wards or Centres)
     h.subAreas.forEach(sub => {
       if (currentY > contentBottom - 20) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
       
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
       doc.text(sub.name + (h.type === 'Ward' ? ' Centre' : ' Ward'), marginL, currentY);
       
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.text('Forms: ' + sub.formsCount + '/' + sub.totalStreams, pageW - marginR, currentY, { align: 'right' });
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); 
+      // Show "No Streams" if totalStreams is 0
+      var formText = sub.totalStreams === 0 ? 'No Streams' : 'Forms: ' + sub.formsCount + '/' + sub.totalStreams;
+      doc.text(formText, pageW - marginR, currentY, { align: 'right' });
       currentY += 4;
 
       if (sub.candidates.length === 0) {
@@ -5038,12 +5037,12 @@ function buildPositionPDF(data) {
           styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.5, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
           headStyles: { fontStyle: 'bold', fontSize: 7, textColor: SLATE, fillColor: [250, 250, 250] },
           columnStyles: { 0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 30, textColor: SLATE }, 3: { cellWidth: 18, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 15, halign: 'right', textColor: SLATE } },
-          margin: { left: marginL + 4, right: marginR } // Indented slightly
+          margin: { left: marginL + 4, right: marginR }
         });
         currentY = doc.lastAutoTable.finalY + 6;
       }
     });
-    currentY += 4; // Space between major areas
+    currentY += 4; 
   });
 
   for (var p = 1; p <= doc.internal.getNumberOfPages(); p++) { doc.setPage(p); drawFooter(); }
