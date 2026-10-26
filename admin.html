@@ -2350,7 +2350,32 @@ body::after {
       </button>
     </div>
   </div>
-
+<div class="section-card" style="margin-top:16px; border: 1.5px solid rgba(196, 69, 58, 0.3); background: rgba(196, 69, 58, 0.02);">
+      <div class="section-head">
+        <div>
+          <div class="section-title" style="color: var(--danger);"><i class="fas fa-triangle-exclamation"></i> County Data Reset</div>
+          <div class="section-desc">Prepare a specific county for a new election phase (e.g., Primaries to General Election).</div>
+        </div>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
+        This will permanently delete all <strong>Candidates, Agents, Aspirants, Results, Streams, and Forms</strong> for the selected county. 
+        Your geographic structure (Constituencies, Wards, and Centres) will remain intact.
+      </p>
+      
+      <div class="form-row" style="align-items: flex-end;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Select County to Reset</label>
+          <select id="resetCountySelector" style="width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid var(--danger);">
+            <option value="">— Select County —</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <button class="btn btn-danger" style="width: 100%; height: 42px;" onclick="confirmCountyReset()">
+            <i class="fas fa-trash-alt"></i> Reset County
+          </button>
+        </div>
+      </div>
+    </div>
 </div><!-- /page -->
 
 <!-- ============================================================
@@ -2740,8 +2765,48 @@ async function loadCounties() {
     CURRENT_COUNTY = COUNTIES[0].id;
   }
   selector.value = CURRENT_COUNTY;
+  populateResetDropdown();
+}
+function populateResetDropdown() {
+  var sel = document.getElementById('resetCountySelector');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select County —</option>' + 
+    COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
 }
 
+function confirmCountyReset() {
+  var countyId = document.getElementById('resetCountySelector').value;
+  if (!countyId) return toast('Please select a county first.', 'error');
+  
+  var countyName = COUNTIES.find(c => c.id === countyId)?.name || 'County';
+
+  thConfirm({
+    title: 'Reset ' + countyName + '?',
+    message: 'This will wipe ALL results, candidates, agents, and streams for <strong>' + countyName + '</strong>. The Wards and Centres will remain.',
+    confirmText: 'Yes, Reset County',
+    tone: 'danger',
+    icon: 'fa-triangle-exclamation'
+  }).then(async ok => {
+    if (!ok) return;
+    
+    var btn = document.querySelector('#resetCountySelector').closest('.form-row').querySelector('button');
+    thBtnLoad(btn, 'Wiping…');
+    
+    try {
+      const { data, error } = await db.rpc('reset_county_data', { p_county_id: countyId });
+      if (error) throw error;
+      if (!data.success) throw new Error(data.message);
+
+      toast(countyName + ' reset successfully.', 'success');
+      refreshAll(); // Reload the dashboard
+      
+    } catch (err) {
+      console.error(err);
+      toast(err.message, 'error');
+      thBtnDone(btn);
+    }
+  });
+}
 function switchCounty(countyId) {
   CURRENT_COUNTY = countyId;
   var countyName = COUNTIES.find(c => c.id === countyId)?.name || 'County';
