@@ -4035,19 +4035,18 @@ async function loadAdminResults() {
   var activeStreamCodes = STREAMS.map(s => s.code);
   if (activeStreamCodes.length === 0) activeStreamCodes = ['NONE'];
 
-  const [ { data: cands }, { data: resultsData } ] = await Promise.all([
-    db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY), 
+  const [ { data: resultsData } ] = await Promise.all([
     db.from('results').select('stream_code, candidate_code, votes, position').in('stream_code', activeStreamCodes)
   ]);
 
+  // Use the global CANDIDATES array so we don't refetch it!
   var candMap = {}; 
-  (cands||[]).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
+  CANDIDATES.forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
   
   var streamMap = {}; STREAMS.forEach(s => streamMap[s.code] = s);
   var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
   var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
 
-  // Aggregate Votes by POSITION
   var votesByConst = {}, votesByWard = {}, votesByCentre = {}, votesByStream = {}, totalByCand = {};
   
   POSITIONS.forEach(p => {
@@ -4063,22 +4062,21 @@ async function loadAdminResults() {
     if(!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
     totalByCand[r.candidate_code] += r.votes;
 
-    // Stream
     if(!votesByStream[pos][r.stream_code]) votesByStream[pos][r.stream_code] = {};
     votesByStream[pos][r.stream_code][r.candidate_code] = (votesByStream[pos][r.stream_code][r.candidate_code]||0) + r.votes;
-    // Centre
+    
     if(!votesByCentre[pos][centre.id]) votesByCentre[pos][centre.id] = {};
     votesByCentre[pos][centre.id][r.candidate_code] = (votesByCentre[pos][centre.id][r.candidate_code]||0) + r.votes;
-    // Ward
+    
     if(!votesByWard[pos][ward.id]) votesByWard[pos][ward.id] = {};
     votesByWard[pos][ward.id][r.candidate_code] = (votesByWard[pos][ward.id][r.candidate_code]||0) + r.votes;
-    // Const
+    
     if(!votesByConst[pos][ward.constituency_id]) votesByConst[pos][ward.constituency_id] = {};
     votesByConst[pos][ward.constituency_id][r.candidate_code] = (votesByConst[pos][ward.constituency_id][r.candidate_code]||0) + r.votes;
   });
 
   var resultsByPos = {}; POSITIONS.forEach(p => resultsByPos[p] = []);
-  (cands||[]).forEach(c => resultsByPos[c.position].push({ ...c, votes: totalByCand[c.code] || 0 }));
+  CANDIDATES.forEach(c => resultsByPos[c.position].push({ ...c, votes: totalByCand[c.code] || 0 }));
 
   RESULTS_DATA = { 
     results: resultsByPos, candMap, 
@@ -4127,28 +4125,25 @@ function renderResults() {
   else if (ADMIN_DRILL_LEVEL === 'centre') bcHtml = `<button class="btn btn-sm btn-ghost" onclick="adminDrillReset()">All Constituencies</button> <i class="fas fa-chevron-right" style="font-size:10px;margin:0 6px;color:var(--text-muted);"></i> <button class="btn btn-sm btn-ghost" onclick="adminDrillBack('ward')">${CONSTITUENCIES.find(c=>c.id===ADMIN_DRILL_CONST_ID)?.name}</button> <i class="fas fa-chevron-right" style="font-size:10px;margin:0 6px;color:var(--text-muted);"></i> <button class="btn btn-sm btn-primary">${WARDS.find(w=>w.id===ADMIN_DRILL_WARD)?.name}</button>`;
   else if (ADMIN_DRILL_LEVEL === 'stream') bcHtml = `<button class="btn btn-sm btn-ghost" onclick="adminDrillReset()">All Constituencies</button> <i class="fas fa-chevron-right" style="font-size:10px;margin:0 6px;color:var(--text-muted);"></i> <button class="btn btn-sm btn-ghost" onclick="adminDrillBack('ward')">${CONSTITUENCIES.find(c=>c.id===ADMIN_DRILL_CONST_ID)?.name}</button> <i class="fas fa-chevron-right" style="font-size:10px;margin:0 6px;color:var(--text-muted);"></i> <button class="btn btn-sm btn-ghost" onclick="adminDrillBack('centre')">${WARDS.find(w=>w.id===ADMIN_DRILL_WARD)?.name}</button> <i class="fas fa-chevron-right" style="font-size:10px;margin:0 6px;color:var(--text-muted);"></i> <button class="btn btn-sm btn-primary">${CENTRES.find(c=>c.id===ADMIN_DRILL_CENTRE)?.name}</button>`;
 
-  var gridHtml = '<div class="grid">'; // Use the global grid class
+  var gridHtml = '<div class="grid">';
 
   function buildCard(item, levelId, typeLabel, onClickAction) {
-    // Read from the correct POSITION map
     var votesMap = {};
     if (ADMIN_DRILL_LEVEL === 'constituency') votesMap = RESULTS_DATA.votesByConst[CURRENT_RESULT_POS][levelId] || {};
     else if (ADMIN_DRILL_LEVEL === 'ward') votesMap = RESULTS_DATA.votesByWard[CURRENT_RESULT_POS][levelId] || {};
     else if (ADMIN_DRILL_LEVEL === 'centre') votesMap = RESULTS_DATA.votesByCentre[CURRENT_RESULT_POS][levelId] || {};
     else if (ADMIN_DRILL_LEVEL === 'stream') votesMap = RESULTS_DATA.votesByStream[CURRENT_RESULT_POS][levelId] || {};
 
+    var totalVotesInArea = Object.values(votesMap).reduce((s,v) => s+v, 0);
     var topCode = Object.keys(votesMap).sort((a,b) => votesMap[b] - votesMap[a])[0];
     var topCand = RESULTS_DATA.candMap[topCode];
-    var total = Object.values(votesMap).reduce((s,v) => s+v, 0);
-    var pct = total > 0 && topCand ? ((votesMap[topCode]/total)*100).toFixed(1) : '0.0';
+    var pct = totalVotesInArea > 0 && topCand ? ((votesMap[topCode]/totalVotesInArea)*100).toFixed(1) : '0.0';
     
-    // Party Color Tint
     var tintStyle = 'border-left: none !important;'; 
     if (topCand && topCand.color) {
       tintStyle += ` background: linear-gradient(to right, ${tintBg(topCand.color, 0.08)} 0%, #FFFFFF 50%) !important;`;
     }
 
-    // PREMIUM UI: Photo + Crown + Progress Bar
     var leaderHtml = topCand ? `
       <div class="card-leader">
         <div class="avatar-wrap with-crown">
@@ -4169,32 +4164,52 @@ function renderResults() {
       </div>
     ` : `<div class="card-empty-body"><i class="fas fa-hourglass-half"></i>No votes yet</div>`;
 
+    // Add a small total votes badge to the card head
+    var totalBadge = totalVotesInArea > 0 ? `<span style="font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-soft);padding:2px 6px;border-radius:10px;">${totalVotesInArea} votes</span>` : '';
+
     return `<div class="card" style="${tintStyle}" onclick="${onClickAction}">
-      <div class="card-head"><div><div class="card-name">${esc(item.name || item.code)}</div><div class="card-sub">${typeLabel}</div></div></div>
+      <div class="card-head"><div><div class="card-name">${esc(item.name || item.code)}</div><div class="card-sub">${typeLabel}</div></div>${totalBadge}</div>
       ${leaderHtml}
     </div>`;
   }
 
+  // SORTING LOGIC: Put the ones with votes first!
   if (ADMIN_DRILL_LEVEL === 'constituency') {
-    gridHtml += CONSTITUENCIES.map(c => buildCard(c, c.id, 'Constituency', `adminDrillTo('ward', '${c.id}', '')`)).join('');
+    var sorted = [...CONSTITUENCIES].sort((a,b) => {
+        var vA = Object.values(RESULTS_DATA.votesByConst[CURRENT_RESULT_POS][a.id]||{}).reduce((s,v)=>s+v,0);
+        var vB = Object.values(RESULTS_DATA.votesByConst[CURRENT_RESULT_POS][b.id]||{}).reduce((s,v)=>s+v,0);
+        return vB - vA;
+    });
+    gridHtml += sorted.map(c => buildCard(c, c.id, 'Constituency', `adminDrillTo('ward', '${c.id}', '')`)).join('');
   } else if (ADMIN_DRILL_LEVEL === 'ward') {
     var wards = WARDS.filter(w => w.constituency_id === ADMIN_DRILL_CONST_ID);
-    gridHtml += wards.map(w => buildCard(w, w.id, 'Ward', `adminDrillTo('centre', '${ADMIN_DRILL_CONST_ID}', '${w.id}')`)).join('');
+    var sorted = [...wards].sort((a,b) => {
+        var vA = Object.values(RESULTS_DATA.votesByWard[CURRENT_RESULT_POS][a.id]||{}).reduce((s,v)=>s+v,0);
+        var vB = Object.values(RESULTS_DATA.votesByWard[CURRENT_RESULT_POS][b.id]||{}).reduce((s,v)=>s+v,0);
+        return vB - vA;
+    });
+    gridHtml += sorted.map(w => buildCard(w, w.id, 'Ward', `adminDrillTo('centre', '${ADMIN_DRILL_CONST_ID}', '${w.id}')`)).join('');
   } else if (ADMIN_DRILL_LEVEL === 'centre') {
     var centres = CENTRES.filter(c => c.ward_id === ADMIN_DRILL_WARD);
-    gridHtml += centres.map(c => buildCard(c, c.id, 'Centre', `adminDrillTo('stream', '${ADMIN_DRILL_CONST_ID}', '${ADMIN_DRILL_WARD}', '${c.id}')`)).join('');
+    var sorted = [...centres].sort((a,b) => {
+        var vA = Object.values(RESULTS_DATA.votesByCentre[CURRENT_RESULT_POS][a.id]||{}).reduce((s,v)=>s+v,0);
+        var vB = Object.values(RESULTS_DATA.votesByCentre[CURRENT_RESULT_POS][b.id]||{}).reduce((s,v)=>s+v,0);
+        return vB - vA;
+    });
+    gridHtml += sorted.map(c => buildCard(c, c.id, 'Centre', `adminDrillTo('stream', '${ADMIN_DRILL_CONST_ID}', '${ADMIN_DRILL_WARD}', '${c.id}')`)).join('');
   } else if (ADMIN_DRILL_LEVEL === 'stream') {
     var streams = STREAMS.filter(s => s.centre_id === ADMIN_DRILL_CENTRE);
-    gridHtml += streams.map(s => buildCard({name: 'STR '+s.stream_number, code: s.code}, s.code, 'Stream', `alert('Stream detail coming soon')`)).join('');
+    var sorted = [...streams].sort((a,b) => {
+        var vA = Object.values(RESULTS_DATA.votesByStream[CURRENT_RESULT_POS][a.code]||{}).reduce((s,v)=>s+v,0);
+        var vB = Object.values(RESULTS_DATA.votesByStream[CURRENT_RESULT_POS][b.code]||{}).reduce((s,v)=>s+v,0);
+        return vB - vA;
+    });
+    gridHtml += sorted.map(s => buildCard({name: 'STR '+s.stream_number, code: s.code}, s.code, 'Stream', `alert('Stream detail coming soon')`)).join('');
   }
   gridHtml += '</div>';
 
   el.innerHTML = `<div style="margin-bottom:16px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">${bcHtml}</div>` + gridHtml;
 }
-
-function adminDrillReset() { ADMIN_DRILL_LEVEL = 'constituency'; ADMIN_DRILL_CONST_ID = ''; ADMIN_DRILL_WARD = ''; ADMIN_DRILL_CENTRE = ''; renderResults(); }
-function adminDrillTo(level, constId, wardId, centreId) { ADMIN_DRILL_LEVEL = level; if(constId) ADMIN_DRILL_CONST_ID = constId; if(wardId) ADMIN_DRILL_WARD = wardId; if(centreId) ADMIN_DRILL_CENTRE = centreId; renderResults(); }
-function adminDrillBack(level) { if(level === 'ward') { ADMIN_DRILL_LEVEL = 'ward'; ADMIN_DRILL_WARD = ''; ADMIN_DRILL_CENTRE = ''; } if(level === 'centre') { ADMIN_DRILL_LEVEL = 'centre'; ADMIN_DRILL_CENTRE = ''; } renderResults(); }
 
 // --- MCA grid view: one card per ward, showing the leader ---
 function renderMCAGrid() {
