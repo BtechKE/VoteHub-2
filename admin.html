@@ -2853,31 +2853,148 @@ async function loadAspirants() {
 // ================================================================
 //  RENDERERS (Wards, Centres, Streams, Candidates, Agents, Aspirants)
 // ================================================================
+function handleSearch(type, val, renderFunc) {
+  SEARCH_STATE[type] = val.toLowerCase();
+  PAGE_STATE[type] = 1; // Reset to page 1 on search
+  renderFunc(); // Call the specific render function (e.g., renderWards)
+}
+
+function changePage(type, page, renderFunc) {
+  PAGE_STATE[type] = page;
+  renderFunc();
+}
+
+function renderSearchAndPagination(type, totalItems, renderFunc) {
+  var totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+  var currentPage = PAGE_STATE[type];
+  
+  // Search Bar HTML
+  var html = `
+    <div style="margin-bottom: 16px; position: relative;">
+      <i class="fas fa-search" style="position: absolute; left: 14px; top: 14px; color: var(--text-muted);"></i>
+      <input type="text" placeholder="Search ${type}..." value="${escAttr(SEARCH_STATE[type])}" 
+        oninput="handleSearch('${type}', this.value, ${renderFunc.name})"
+        style="width: 100%; padding: 12px 14px 12px 40px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg); font-size: 14px; transition: all 0.2s;">
+    </div>
+  `;
+
+  // Pagination HTML
+  if (totalPages > 1) {
+    html += '<div style="display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 20px; flex-wrap: wrap;">';
+    
+    // Prev Button
+    html += `<button class="btn btn-ghost btn-sm" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage('${type}', ${currentPage - 1}, ${renderFunc.name})"><i class="fas fa-chevron-left"></i></button>`;
+    
+    // Page Numbers (Smart ellipsis logic)
+    for (let i = 1; i <= totalPages; i++) {
+      if (totalPages > 7 && i > 2 && i < totalPages - 1 && Math.abs(i - currentPage) > 1) {
+        if (i === 3 || i === totalPages - 2) html += '<span style="color:var(--text-muted); padding:0 4px;">...</span>';
+        continue;
+      }
+      
+      var activeStyle = i === currentPage 
+        ? 'background: var(--text); color: var(--bg); border-color: var(--text);' 
+        : 'background: var(--surface); color: var(--text); border: 1px solid var(--border);';
+        
+      html += `<button class="btn btn-sm" style="${activeStyle}" onclick="changePage('${type}', ${i}, ${renderFunc.name})">${i}</button>`;
+    }
+    
+    // Next Button
+    html += `<button class="btn btn-ghost btn-sm" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage('${type}', ${currentPage + 1}, ${renderFunc.name})"><i class="fas fa-chevron-right"></i></button>`;
+    html += '</div>';
+  }
+  
+  return html;
+}
 function renderWards() {
   var el = document.getElementById('wardsList');
   if (!WARDS.length) { el.innerHTML = emptyHTML('No wards yet', 'Add your first ward.'); return; }
+  
   var constMap = {}; CONSTITUENCIES.forEach(c => constMap[c.id] = c.name);
-  el.innerHTML = '<div class="item-list">' + WARDS.map(w => `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+  
+  // Search Filter
+  var filtered = WARDS.filter(w => 
+    w.name.toLowerCase().includes(SEARCH_STATE.wards) || 
+    (constMap[w.constituency_id] || '').toLowerCase().includes(SEARCH_STATE.wards)
+  );
+  
+  // Pagination Slice
+  var start = (PAGE_STATE.wards - 1) * ITEMS_PER_PAGE;
+  var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
+  
+  var html = renderSearchAndPagination('wards', filtered.length, renderWards);
+  
+  if (!paginated.length) {
+    html += emptyHTML('No results found', 'Try a different search term.');
+  } else {
+    html += '<div class="item-list">' + paginated.map(w => 
+      `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`
+    ).join('') + '</div>';
+  }
+  el.innerHTML = html;
 }
 
 function renderCentres() {
   var el = document.getElementById('centresList');
   if (!CENTRES.length) { el.innerHTML = emptyHTML('No centres yet', 'Add centres.'); return; }
+  
   var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w.name);
-  el.innerHTML = '<div class="item-list">' + CENTRES.map(c => `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
+  
+  // Search Filter
+  var filtered = CENTRES.filter(c => 
+    c.name.toLowerCase().includes(SEARCH_STATE.centres) || 
+    (wardMap[c.ward_id] || '').toLowerCase().includes(SEARCH_STATE.centres)
+  );
+  
+  // Pagination Slice
+  var start = (PAGE_STATE.centres - 1) * ITEMS_PER_PAGE;
+  var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
+  
+  var html = renderSearchAndPagination('centres', filtered.length, renderCentres);
+  
+  if (!paginated.length) {
+    html += emptyHTML('No results found', 'Try a different search term.');
+  } else {
+    html += '<div class="item-list">' + paginated.map(c => 
+      `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`
+    ).join('') + '</div>';
+  }
+  el.innerHTML = html;
 }
-
 function renderStreams() {
   var el = document.getElementById('streamsList');
   if (!STREAMS.length) { el.innerHTML = emptyHTML('No streams yet', 'Generate streams from a centre.'); return; }
+  
   var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c.name);
-  var grouped = {}; STREAMS.forEach(s => { if (!grouped[s.centre_id]) grouped[s.centre_id] = []; grouped[s.centre_id].push(s); });
-  var html = '';
-  for (var centreId in grouped) {
-    var list = grouped[centreId];
-    html += `<div style="margin-bottom:14px;"><div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">${esc(centreMap[centreId])} · ${list.length} streams</div><div class="item-list">`;
-    html += list.map(s => `<span class="item"><span class="item-code">${esc(s.code)}</span><span class="item-actions"><button class="danger" onclick="deleteStream('${esc(s.code)}')"><i class="fas fa-trash"></i></button></span></span>`).join('');
-    html += '</div></div>';
+  
+  // Search Filter
+  var filtered = STREAMS.filter(s => 
+    s.code.toLowerCase().includes(SEARCH_STATE.streams) || 
+    (centreMap[s.centre_id] || '').toLowerCase().includes(SEARCH_STATE.streams)
+  );
+  
+  // Pagination Slice
+  var start = (PAGE_STATE.streams - 1) * ITEMS_PER_PAGE;
+  var paginated = filtered.slice(start, start + ITEMS_PER_PAGE);
+  
+  var html = renderSearchAndPagination('streams', filtered.length, renderStreams);
+  
+  if (!paginated.length) {
+    html += emptyHTML('No results found', 'Try a different search term.');
+  } else {
+    // Group the paginated streams by centre for display
+    var grouped = {};
+    paginated.forEach(s => { 
+      if (!grouped[s.centre_id]) grouped[s.centre_id] = []; 
+      grouped[s.centre_id].push(s); 
+    });
+    
+    for (var centreId in grouped) {
+      var list = grouped[centreId];
+      html += `<div style="margin-bottom:14px;"><div style="font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">${esc(centreMap[centreId])} · ${list.length} streams</div><div class="item-list">`;
+      html += list.map(s => `<span class="item"><span class="item-code">${esc(s.code)}</span><span class="item-actions"><button class="danger" onclick="deleteStream('${esc(s.code)}')"><i class="fas fa-trash"></i></button></span></span>`).join('');
+      html += '</div></div>';
+    }
   }
   el.innerHTML = html;
 }
