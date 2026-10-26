@@ -4425,9 +4425,8 @@ function populateTrackerWards() {
   var constSel = document.getElementById('trackerConstituency');
   var constSet = {};
   
-  // Populate Constituencies
-  TRACKER_DATA.groups.forEach(g => { 
-    constSet[g.constituencyId] = CONSTITUENCIES.find(c=>c.id===g.constituencyId)?.name || 'Unknown'; 
+  CONSTITUENCIES.forEach(c => {
+    constSet[c.id] = c.name;
   });
   
   var current = constSel.value;
@@ -4437,8 +4436,9 @@ function populateTrackerWards() {
     ).join('');
   
   if (current) constSel.value = current;
-  trackerWardOptions(); // Call the next level down
+  trackerWardOptions(); 
 }
+  
   function trackerWardOptions() {
   if (!TRACKER_DATA) return;
   var constFilter = document.getElementById('trackerConstituency').value;
