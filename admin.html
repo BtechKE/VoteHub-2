@@ -2456,7 +2456,10 @@ const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 // ================================================================
 var COUNTIES = [], CONSTITUENCIES = [];
 var WARDS = [], CENTRES = [], STREAMS = [], CANDIDATES = [], AGENTS = [], ASPIRANTS = [];
-var CURRENT_COUNTY = ''; // <--- ADD THIS LINE
+var CURRENT_COUNTY = ''; 
+var PAGE_STATE = { wards: 1, centres: 1, streams: 1, candidates: 1, agents: 1, aspirants: 1 };
+var SEARCH_STATE = { wards: '', centres: '', streams: '', candidates: '', agents: '', aspirants: '' };
+var ITEMS_PER_PAGE = 50;
 var agentSelectedStreams = [];
 var CONFIG = {};
 var countdownTimer = null;
@@ -4406,12 +4409,11 @@ function renderTracker() {
       html += '<div class="stream-code">' + esc(st.code) + '</div></div>';
       
       html += '<div class="track-pips">';
-        TRACKER_DATA.positions.forEach(pos => {
+      TRACKER_DATA.positions.forEach(pos => {
         var hit = st.statuses[pos];
         var short = POSITION_SHORT[pos] || pos.charAt(0);
         var tip = hit ? pos + ' · tap to view results' : pos + ' · not submitted yet';
         
-        // Check if this specific stream/position has a photo
         var hasForm = !!TRACKER_FORMS[st.code + '_' + pos];
         var formBadge = hasForm ? '<span style="position:absolute;bottom:-3px;right:-3px;background:var(--blue);color:white;border-radius:50%;width:12px;height:12px;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,0.2);"><i class="fas fa-camera" style="font-size:6px;"></i></span>' : '';
         
@@ -4421,6 +4423,14 @@ function renderTracker() {
           html += '<span class="track-pip pending" style="position:relative;" title="' + escAttr(tip) + '">' + short + '</span>';
         }
       });
+      html += '</div>'; // CLOSE track-pips
+      
+      html += '<div class="stream-progress">' + st.submittedCount + '/' + TRACKER_DATA.positions.length + '</div>';
+      html += '</div>'; // CLOSE stream-row
+    });
+    html += '</div>'; // CLOSE tracker-group
+  });
+
   if (!html) {
     html = '<div class="empty"><i class="fas fa-inbox"></i><div>No streams match the current filters.</div></div>';
   }
@@ -4909,10 +4919,14 @@ async function deleteCounty(id) {
 
 // --- CONSTITUENCIES CRUD ---
 function openConstituencyModal() {
-  if (!COUNTIES.length) return toast('Add a county first.', 'error');
-  var opts = COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  var currentCountyName = COUNTIES.find(c => c.id === CURRENT_COUNTY)?.name || 'Unknown';
+  
   openModal(modalHead('Add Constituency') + 
-    `<div class="form-group"><label>County</label><select id="m_constCounty">${opts}</select></div>
+    `<div class="form-group">
+       <label>County</label>
+       <input value="${esc(currentCountyName)}" disabled style="background:var(--primary-tint); font-weight:700; color:var(--primary-dark);">
+       <input type="hidden" id="m_constCounty" value="${CURRENT_COUNTY}">
+     </div>
      <div class="form-group"><label>Constituency Name</label><input id="m_constName" placeholder="e.g. Westlands"></div>
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveConstituency()">Save</button></div>`);
 }
