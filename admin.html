@@ -2053,7 +2053,12 @@ body::after {
   background: rgba(196, 69, 58, 0.08); color: var(--danger);
   font-size: 15px; font-weight: 800; border: none; cursor: pointer;
 }
-    
+    /* Green background when a county is selected */
+#globalCountySelector.has-county {
+  background: var(--primary) !important;
+  color: var(--text) !important;
+  border-color: var(--text) !important;
+}
 </style>
 </head>
 <body>
@@ -2879,6 +2884,10 @@ async function loadCounties() {
     CURRENT_COUNTY = COUNTIES[0].id;
   }
   selector.value = CURRENT_COUNTY;
+  
+  // Apply green background on load
+  if (CURRENT_COUNTY) selector.classList.add('has-county');
+
   populateResetDropdown();
 }
 function populateResetDropdown() {
@@ -2925,6 +2934,15 @@ function switchCounty(countyId) {
   CURRENT_COUNTY = countyId;
   var countyName = COUNTIES.find(c => c.id === countyId)?.name || 'County';
   toast('Switched to ' + countyName, 'info');
+  
+  // Toggle the green background
+  var sel = document.getElementById('globalCountySelector');
+  if (countyId) {
+    sel.classList.add('has-county');
+  } else {
+    sel.classList.remove('has-county');
+  }
+
   refreshAll(); 
 }
 
