@@ -651,6 +651,8 @@ var CURRENT_COUNTY = '';
 
 // --- DRILL DOWN STATE ---
 var DRILL_LEVEL = ''; // 'constituency', 'ward', or 'centre'
+var DRILL_COUNTY_ID = ''; 
+var DRILL_COUNTY_NAME = '';
 var DRILL_CONST_ID = ''; 
 var DRILL_CONST_NAME = '';
 var DRILL_WARD = ''; 
@@ -713,10 +715,10 @@ async function init() {
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
   // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
-  if (USER.isSpectator || USER.position === 'President') {
+   if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
-    DRILL_LEVEL = 'constituency';
-    TRACKER_LEVEL = 'constituency';
+    DRILL_LEVEL = 'constituency'; // <--- CHANGE THIS TO 'county'
+    TRACKER_LEVEL = 'county'; // <--- CHANGE THIS TO 'county'
     document.getElementById('nationalScopeWrap').style.display = 'flex';
     
     const { data: counties } = await db.from('counties').select('id, name').order('name');
@@ -788,13 +790,10 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
-    var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
-    if (!activeCounty && SCOPE_MODE !== 'ward' && SCOPE_MODE !== 'constituency') return;
-
-    // 1. Fetch Geography
+    // 1. Fetch Geography based on scope
     let constQuery = db.from('constituencies').select('*');
-    if (activeCounty) constQuery = constQuery.eq('county_id', activeCounty);
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
+    else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
     const { data: consts } = await constQuery;
 
     let wardQuery = db.from('wards').select('*');
@@ -811,49 +810,63 @@ async function loadOverview(silent) {
 
     // 2. Fetch Candidates & Results
     let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
-    if (activeCounty) candQuery = candQuery.eq('county_id', activeCounty);
+    if (SCOPE_MODE !== 'national') candQuery = candQuery.eq('county_id', USER.county);
     const { data: cands } = await candQuery;
 
     const { data: resultsData } = await db.from('results').select('stream_code, candidate_code, votes').eq('position', VIEW_POS);
 
-    // 3. Build Lookup Maps for Fast Aggregation
+    // 3. Build Lookup Maps
     const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
     const streamMap = {}; (streamsData || []).forEach(s => streamMap[s.code] = s);
     const centreMap = {}; (centresData || []).forEach(c => centreMap[c.id] = c);
     const wardMap = {}; (wardsData || []).forEach(w => wardMap[w.id] = w);
+    const constMap = {}; (consts || []).forEach(c => constMap[c.id] = c);
+
+    // Fetch all counties for the national scope
+    let countiesData = [];
+    if (SCOPE_MODE === 'national') {
+      const { data: cData } = await db.from('counties').select('*').order('name');
+      countiesData = cData || [];
+    }
+    const countyMap = {}; countiesData.forEach(c => countyMap[c.id] = c);
 
     // 4. Aggregate Votes
-const votesByCentre = {};
-const votesByWard = {};
-const votesByConst = {};
-const votesByStream = {}; // <--- ADD THIS
-const totalByCand = {};
+    const votesByCounty = {};
+    const votesByConst = {};
+    const votesByWard = {};
+    const votesByCentre = {};
+    const votesByStream = {}; 
+    const totalByCand = {};
 
-(resultsData || []).forEach(r => {
-  const stream = streamMap[r.stream_code];
-  if (!stream) return; 
-  const centre = centreMap[stream.centre_id];
-  const ward = wardMap[centre.ward_id];
+    (resultsData || []).forEach(r => {
+      const stream = streamMap[r.stream_code];
+      if (!stream) return; 
+      const centre = centreMap[stream.centre_id];
+      if (!centre) return;
+      const ward = wardMap[centre.ward_id];
+      if (!ward) return;
+      const constituency = constMap[ward.constituency_id];
+      if (!constituency) return;
+      const countyId = constituency.county_id;
 
-  if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
-  totalByCand[r.candidate_code] += r.votes;
+      if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
+      totalByCand[r.candidate_code] += r.votes;
 
-  if (!votesByStream[r.stream_code]) votesByStream[r.stream_code] = {}; // <--- ADD THIS
-  if (!votesByStream[r.stream_code][r.candidate_code]) votesByStream[r.stream_code][r.candidate_code] = 0; // <--- ADD THIS
-  votesByStream[r.stream_code][r.candidate_code] += r.votes; // <--- ADD THIS
+      if (!votesByStream[r.stream_code]) votesByStream[r.stream_code] = {};
+      votesByStream[r.stream_code][r.candidate_code] = (votesByStream[r.stream_code][r.candidate_code]||0) + r.votes;
 
-  if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
-  if (!votesByCentre[centre.id][r.candidate_code]) votesByCentre[centre.id][r.candidate_code] = 0;
-  votesByCentre[centre.id][r.candidate_code] += r.votes;
+      if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
+      votesByCentre[centre.id][r.candidate_code] = (votesByCentre[centre.id][r.candidate_code]||0) + r.votes;
 
-  if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
-  if (!votesByWard[ward.id][r.candidate_code]) votesByWard[ward.id][r.candidate_code] = 0;
-  votesByWard[ward.id][r.candidate_code] += r.votes;
+      if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
+      votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
 
-  if (!votesByConst[ward.constituency_id]) votesByConst[ward.constituency_id] = {};
-  if (!votesByConst[ward.constituency_id][r.candidate_code]) votesByConst[ward.constituency_id][r.candidate_code] = 0;
-  votesByConst[ward.constituency_id][r.candidate_code] += r.votes;
-});
+      if (!votesByConst[constituency.id]) votesByConst[constituency.id] = {};
+      votesByConst[constituency.id][r.candidate_code] = (votesByConst[constituency.id][r.candidate_code]||0) + r.votes;
+
+      if (!votesByCounty[countyId]) votesByCounty[countyId] = {};
+      votesByCounty[countyId][r.candidate_code] = (votesByCounty[countyId][r.candidate_code]||0) + r.votes;
+    });
 
     // 5. Format Global Leaderboard
     let leaderboard = (cands || []).map(c => ({
@@ -870,13 +883,13 @@ const totalByCand = {};
     }
 
     OVERVIEW = {
-  viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
-  leader: leaderboard[0], runner: leaderboard[1], 
-  margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
-  consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
-  votesByConst, votesByWard, votesByCentre, votesByStream, candMap, // <--- ADD votesByStream HERE
-  reported: (resultsData || []).length, totalStreams: (streamsData || []).length
-};
+      viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
+      leader: leaderboard[0], runner: leaderboard[1], 
+      margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
+      counties: countiesData, consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
+      votesByCounty, votesByConst, votesByWard, votesByCentre, votesByStream, candMap,
+      reported: (resultsData || []).length, totalStreams: (streamsData || []).length
+    };
 
     renderTabs(); renderHero(); renderDrillGrid(); renderBoard();
     setPulse('live');
@@ -1156,14 +1169,38 @@ function renderHero() {
     return;
   }
 
-  // --- 3. HANDLE COUNTY-WIDE POSITIONS (President, Governor, Senator, Women Rep) ---
+  // --- 3. HANDLE COUNTY-WIDE POSITIONS & NATIONAL (President, Governor, Senator, Women Rep) ---
   var scopedVotes = {};
   var scopeLabel = '';
   
-  if (DRILL_LEVEL === 'constituency') { scopedVotes = {}; var keys = Object.keys(OVERVIEW.votesByConst); keys.forEach(k => { for (let c in OVERVIEW.votesByConst[k]) { scopedVotes[c] = (scopedVotes[c]||0) + OVERVIEW.votesByConst[k][c]; } }); scopeLabel = 'Overall'; }
-  else if (DRILL_LEVEL === 'ward') { scopedVotes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {}; scopeLabel = DRILL_CONST_NAME; }
-  else if (DRILL_LEVEL === 'centre') { scopedVotes = OVERVIEW.votesByWard[DRILL_WARD] || {}; scopeLabel = DRILL_WARD_NAME; }
-  else if (DRILL_LEVEL === 'stream') { scopedVotes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {}; scopeLabel = DRILL_CENTRE_NAME; }
+  if (DRILL_LEVEL === 'county') { 
+      // NATIONAL LEVEL (47 Counties) - Aggregate everything
+      scopedVotes = {}; 
+      var keys = Object.keys(OVERVIEW.votesByCounty || {}); 
+      keys.forEach(k => { 
+          for (let c in OVERVIEW.votesByCounty[k]) { 
+              scopedVotes[c] = (scopedVotes[c]||0) + OVERVIEW.votesByCounty[k][c]; 
+          } 
+      }); 
+      scopeLabel = 'Overall National'; 
+  }
+  else if (DRILL_LEVEL === 'constituency') { 
+      // COUNTY LEVEL (e.g. Nairobi)
+      scopedVotes = OVERVIEW.votesByCounty[DRILL_COUNTY_ID] || {}; 
+      scopeLabel = DRILL_COUNTY_NAME; 
+  }
+  else if (DRILL_LEVEL === 'ward') { 
+      scopedVotes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {}; 
+      scopeLabel = DRILL_CONST_NAME; 
+  }
+  else if (DRILL_LEVEL === 'centre') { 
+      scopedVotes = OVERVIEW.votesByWard[DRILL_WARD] || {}; 
+      scopeLabel = DRILL_WARD_NAME; 
+  }
+  else if (DRILL_LEVEL === 'stream') { 
+      scopedVotes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {}; 
+      scopeLabel = DRILL_CENTRE_NAME; 
+  }
 
   var cands = Object.keys(scopedVotes).map(code => ({ ...OVERVIEW.candMap[code], votes: scopedVotes[code] })).sort((a,b)=>b.votes-a.votes);
   var total = cands.reduce((s,c)=>s+c.votes, 0);
@@ -1191,7 +1228,9 @@ function renderBreadcrumb() {
   if (!el) return;
   var parts = [];
 
-  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
+  if (SCOPE_MODE === 'national') {
+      parts.push({ label: 'All Counties', active: DRILL_LEVEL === 'county', onclick: 'resetDrill()' });
+  } else if (SCOPE_MODE === 'county') {
       parts.push({ label: 'All Constituencies', active: DRILL_LEVEL === 'constituency', onclick: 'resetDrill()' });
   } else if (SCOPE_MODE === 'constituency') {
       parts.push({ label: 'All Wards', active: DRILL_LEVEL === 'ward', onclick: 'resetDrill()' });
@@ -1199,6 +1238,7 @@ function renderBreadcrumb() {
       parts.push({ label: 'All Centres', active: DRILL_LEVEL === 'centre', onclick: 'resetDrill()' });
   }
 
+  if (DRILL_COUNTY_ID) parts.push({ label: DRILL_COUNTY_NAME, active: DRILL_LEVEL === 'constituency', onclick: `drillDown('constituency', '${DRILL_COUNTY_ID}', '${DRILL_COUNTY_NAME}')` });
   if (DRILL_CONST_ID) parts.push({ label: DRILL_CONST_NAME, active: DRILL_LEVEL === 'ward', onclick: `drillDown('ward', '${DRILL_CONST_ID}', '${DRILL_CONST_NAME}')` });
   if (DRILL_WARD) parts.push({ label: DRILL_WARD_NAME, active: DRILL_LEVEL === 'centre', onclick: `drillDown('centre', '${DRILL_WARD}', '${DRILL_WARD_NAME}')` });
   if (DRILL_CENTRE) parts.push({ label: DRILL_CENTRE_NAME, active: DRILL_LEVEL === 'stream', onclick: `drillDown('stream', '${DRILL_CENTRE}', '${DRILL_CENTRE_NAME}')` });
@@ -1216,8 +1256,8 @@ function renderDrillGrid() {
   var title = document.getElementById('drillTitle');
   var sub = document.getElementById('drillSub');
 
-  // Titles
-  if (DRILL_LEVEL === 'constituency') { title.textContent = 'Constituency Breakdown'; sub.textContent = 'Vote share by constituency'; }
+  if (DRILL_LEVEL === 'county') { title.textContent = 'National Overview'; sub.textContent = 'Vote share by county'; }
+  else if (DRILL_LEVEL === 'constituency') { title.textContent = DRILL_COUNTY_NAME ? DRILL_COUNTY_NAME + ' Constituencies' : 'Constituency Breakdown'; sub.textContent = 'Vote share by constituency'; }
   else if (DRILL_LEVEL === 'ward') { title.textContent = DRILL_CONST_NAME + ' Wards'; sub.textContent = 'Vote share by ward'; }
   else if (DRILL_LEVEL === 'centre') { title.textContent = DRILL_WARD_NAME + ' Centres'; sub.textContent = 'Vote share by polling centre'; }
   else if (DRILL_LEVEL === 'stream') { title.textContent = DRILL_CENTRE_NAME + ' Streams'; sub.textContent = 'Vote share by stream'; }
@@ -1225,7 +1265,6 @@ function renderDrillGrid() {
   document.getElementById('drillCount').textContent = ''; 
   renderBreadcrumb();
 
-  // Helper function to build the card uniformly
   function buildCard(item, votesMap, typeLabel, onClickAction) {
     var itemKey = item.id || item.code;
     var votes = votesMap[itemKey] || {};
@@ -1234,7 +1273,6 @@ function renderDrillGrid() {
     var total = Object.values(votes).reduce((s,v) => s+v, 0);
     var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
     
-    // Party Tint & Remove Left Stripe
     var tintStyle = 'border-left: none !important;';
     if (topCand && topCand.color) {
       tintStyle += ` background: linear-gradient(to right, ${tintBg(topCand.color, 0.08)} 0%, #FFFFFF 50%) !important;`;
@@ -1266,15 +1304,21 @@ function renderDrillGrid() {
     </div>`;
   }
 
-  // --- LEVEL 1: CONSTITUENCIES ---
+  if (DRILL_LEVEL === 'county') {
+    el.innerHTML = OVERVIEW.counties.map(c => 
+      buildCard(c, OVERVIEW.votesByCounty, 'County', `drillDown('constituency', '${c.id}', '${c.name}')`)
+    ).join('');
+    return;
+  }
+
   if (DRILL_LEVEL === 'constituency') {
-    el.innerHTML = OVERVIEW.consts.map(c => 
+    var myConsts = OVERVIEW.consts.filter(c => SCOPE_MODE !== 'national' || c.county_id === DRILL_COUNTY_ID);
+    el.innerHTML = myConsts.map(c => 
       buildCard(c, OVERVIEW.votesByConst, 'Constituency', `drillDown('ward', '${c.id}', '${c.name}')`)
     ).join('');
     return;
   }
 
-  // --- LEVEL 2: WARDS ---
   if (DRILL_LEVEL === 'ward') {
     var myWards = OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID);
     el.innerHTML = myWards.map(w => 
@@ -1283,7 +1327,6 @@ function renderDrillGrid() {
     return;
   }
 
-  // --- LEVEL 3: CENTRES ---
   if (DRILL_LEVEL === 'centre') {
     var myCentres = OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD);
     el.innerHTML = myCentres.map(c => 
@@ -1292,7 +1335,6 @@ function renderDrillGrid() {
     return;
   }
 
-  // --- LEVEL 4: STREAMS ---
   if (DRILL_LEVEL === 'stream') {
     var myStreams = OVERVIEW.streams.filter(s => s.centre_id === DRILL_CENTRE);
     el.innerHTML = myStreams.map(s => {
@@ -1302,8 +1344,8 @@ function renderDrillGrid() {
     return;
   }
 }
-
 function drillDown(level, id, name) {
+  if (level === 'constituency') { DRILL_COUNTY_ID = id; DRILL_COUNTY_NAME = name; DRILL_LEVEL = 'constituency'; }
   if (level === 'ward') { DRILL_CONST_ID = id; DRILL_CONST_NAME = name; DRILL_LEVEL = 'ward'; }
   if (level === 'centre') { DRILL_WARD = id; DRILL_WARD_NAME = name; DRILL_LEVEL = 'centre'; }
   if (level === 'stream') { DRILL_CENTRE = id; DRILL_CENTRE_NAME = name; DRILL_LEVEL = 'stream'; }
@@ -1433,11 +1475,13 @@ function renderBoard() {
 }
 
 function resetDrill() {
+  DRILL_COUNTY_ID = ''; DRILL_COUNTY_NAME = '';
   DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
   DRILL_WARD = ''; DRILL_WARD_NAME = '';
   DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
 
-  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') DRILL_LEVEL = 'constituency';
+  if (SCOPE_MODE === 'national') DRILL_LEVEL = 'county';
+  else if (SCOPE_MODE === 'county') DRILL_LEVEL = 'constituency';
   else if (SCOPE_MODE === 'constituency') DRILL_LEVEL = 'ward';
   else if (SCOPE_MODE === 'ward') DRILL_LEVEL = 'centre';
 
