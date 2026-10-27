@@ -2059,6 +2059,27 @@ body::after {
   color: var(--text) !important;
   border-color: var(--text) !important;
 }
+/* ================================================================
+   STATIC FIXED TOP BAR
+================================================================ */
+.topbar {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); /* Adds a subtle shadow so content slides under nicely */
+}
+
+.page {
+  padding-top: 90px !important; /* Pushes the content down so it doesn't hide behind the fixed top bar */
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding-top: 80px !important; /* Slightly smaller push on mobile */
+  }
+}
 </style>
 </head>
 <body>
