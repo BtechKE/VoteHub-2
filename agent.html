@@ -566,19 +566,16 @@ body {
       Please provide a clear, portrait photo of the statutory form.
     </div>
     
-    <!-- Hidden Inputs -->
-    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleFormUpload(event)">
+    <!-- Hidden Input (Gallery / Native Camera) -->
     <input type="file" id="galleryInput" accept="image/*" style="display:none;" onchange="handleFormUpload(event)">
 
-    <button class="action-sheet-option camera" onclick="document.getElementById('cameraInput').click()">
-      <i class="fas fa-camera"></i> Take Photo
-    </button>
     <button class="action-sheet-option gallery" onclick="document.getElementById('galleryInput').click()">
       <i class="fas fa-images"></i> Choose from Gallery
     </button>
     <button class="btn" style="margin-top: 12px; width: 100%; background: rgba(196, 69, 58, 0.08) !important; color: var(--danger) !important; border: 1.5px solid rgba(196, 69, 58, 0.15) !important; border-radius: 16px; font-weight: 800; box-shadow: 0 6px 16px rgba(196, 69, 58, 0.08); transition: all 0.2s ease;" onclick="closeUploadModal()">
-  Cancel
+      Cancel
     </button>
+   
   </div>
 </div>
 
@@ -1245,12 +1242,10 @@ function openUploadModal(streamCode, position) {
   currentFormPos = position;
   document.getElementById('uploadModalTitle').textContent = 'Attach ' + position + ' Form';
   
-  // Reset inputs (Fixes the camera cancel bug)
-  document.getElementById('cameraInput').value = '';
+  // Reset the gallery input
   document.getElementById('galleryInput').value = '';
   
   document.getElementById('uploadOptionsModal').classList.add('active');
-  sessionStorage.setItem('pending_upload', JSON.stringify({ s: streamCode, p: position }));
 }
 
 function closeUploadModal() {
@@ -1310,7 +1305,7 @@ async function handleFormUpload(event) {
   document.getElementById('appLoader').classList.add('active');
 
   try {
-    const result = await shrinkImage(file, 1200, 0.8);
+    const result = await shrinkImage(file, 1600, 0.85);
 
     if (result.width > result.height) {
       toast('Invalid format. Please take a portrait (vertical) photo.', 'error');
@@ -1363,7 +1358,7 @@ function retakePhoto() {
 
     // Tiny thumbnail cache; never allowed to break the upload
     try {
-      const thumb = await shrinkImage(currentFormFile, 150, 0.6);
+      const thumb = await shrinkImage(currentFormFile, 400, 0.7);
       const dataUrl = await new Promise((res, rej) => {
         const r = new FileReader();
         r.onload = () => res(r.result);
@@ -1394,26 +1389,35 @@ function retakePhoto() {
   }
 }
   async function viewAgentForm(streamCode, position) {
-  var localPreview = localStorage.getItem('form_preview_' + streamCode + '_' + position);
+  var fileName = streamCode + '_' + position.replace(/\s+/g, '') + '.jpg';
   
-  if (localPreview) {
-    // If it's saved on the phone, open it instantly
-    document.getElementById('imageViewerImg').src = localPreview;
-    document.getElementById('imageViewerModal').classList.add('active');
-  } else {
-    // If they logged in on a new phone, fetch it securely from Supabase
-    var fileName = streamCode + '_' + position.replace(/\s+/g, '') + '.jpg';
+  // Show loading state
+  document.getElementById('imageViewerImg').src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="%23A5CF83" stroke-width="5" fill="none" stroke-dasharray="1, 10"/></svg>'; // tiny loading circle
+  document.getElementById('imageViewerModal').classList.add('active');
+
+  try {
+    // 1. TRY TO GET THE HIGH-RES IMAGE FROM SUPABASE
     const { data, error } = await db.storage.from('form-photos').createSignedUrl(fileName, 600);
     
     if (error || !data) {
-      toast('Could not load form.', 'error');
-      return;
+      throw new Error("Could not load high-res image.");
     }
     
+    // Set the high-res image
     document.getElementById('imageViewerImg').src = data.signedUrl;
-    document.getElementById('imageViewerModal').classList.add('active');
+    
+  } catch (err) {
+    console.warn("Falling back to local thumbnail", err);
+    // 2. FALLBACK TO LOCAL THUMBNAIL ONLY IF OFFLINE/ERROR
+    var localPreview = localStorage.getItem('form_preview_' + streamCode + '_' + position);
+    if (localPreview) {
+      document.getElementById('imageViewerImg').src = localPreview;
+    } else {
+      toast('Could not load form. Check your internet connection.', 'error');
+      document.getElementById('imageViewerModal').classList.remove('active');
+    }
   }
-  }
+}
 function doLogout() {
   thConfirm({
     title: 'Sign out?',
