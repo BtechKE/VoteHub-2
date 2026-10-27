@@ -3212,15 +3212,56 @@ function renderCandidates() {
 function renderAgents() {
   var el = document.getElementById('agentsList');
   if (!AGENTS.length) { el.innerHTML = emptyHTML('No agents yet', 'Add agents.'); return; }
-  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + AGENTS.map(a => `<span class="item" style="justify-content:space-between;"><span style="display:flex;align-items:center;gap:8px;flex:1;"><span class="item-code">${esc(a.id)}</span><span class="item-name">${esc(a.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.phone||'')}</span></span><span class="item-actions"><button onclick="openResetPwModal('agent','${esc(a.id)}')"><i class="fas fa-key"></i></button><button onclick="editAgent('${esc(a.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteAgent('${esc(a.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
-}
+  
+  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + 
+    AGENTS.map(a => {
+      var devCount = (a.device_ids || []).length;
+      var maxDev = a.max_devices || 3;
+      var devBadge = `<span style="color:${devCount >= maxDev ? 'var(--danger)' : 'var(--blue)'};font-size:11px;font-weight:800;margin-left:6px;" title="Devices used"><i class="fas fa-mobile-alt"></i> ${devCount}/${maxDev}</span>`;
 
+      return `<span class="item" style="justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;flex:1;">
+          <span class="item-code">${esc(a.id)}</span>
+          <span class="item-name">${esc(a.name)}</span>
+          <span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.phone||'')}</span>
+          ${devBadge}
+        </span>
+        <span class="item-actions">
+          <button onclick="resetDevice('agent','${esc(a.id)}')" title="Reset Devices"><i class="fas fa-mobile-alt"></i></button>
+          <button onclick="openResetPwModal('agent','${esc(a.id)}')" title="Reset Password"><i class="fas fa-key"></i></button>
+          <button onclick="editAgent('${esc(a.id)}')" title="Edit Agent"><i class="fas fa-pen"></i></button>
+          <button class="danger" onclick="deleteAgent('${esc(a.id)}')" title="Delete Agent"><i class="fas fa-trash"></i></button>
+        </span>
+      </span>`;
+    }).join('') + '</div>';
+}
 function renderAspirants() {
   var el = document.getElementById('aspirantsList');
   if (!ASPIRANTS.length) { el.innerHTML = emptyHTML('No aspirants yet', 'Add aspirants.'); return; }
-  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + ASPIRANTS.map(a => `<span class="item" style="justify-content:space-between;"><span style="display:flex;align-items:center;gap:8px;flex:1;"><span class="item-code">${esc(a.login_code)}</span><span class="item-name">${esc(a.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.position)}</span></span><span class="item-actions"><button onclick="toggleAspirant('${esc(a.id)}')"><i class="fas fa-power-off"></i></button><button onclick="openResetPwModal('aspirant','${esc(a.id)}')"><i class="fas fa-key"></i></button><button onclick="editAspirant('${esc(a.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteAspirant('${esc(a.id)}')"><i class="fas fa-trash"></i></button></span></span>`).join('') + '</div>';
-}
+  
+  el.innerHTML = '<div class="item-list" style="flex-direction:column;align-items:stretch;">' + 
+    ASPIRANTS.map(a => {
+      var devCount = (a.device_ids || []).length;
+      var maxDev = a.max_devices || 3;
+      var devBadge = `<span style="color:${devCount >= maxDev ? 'var(--danger)' : 'var(--blue)'};font-size:11px;font-weight:800;margin-left:6px;" title="Devices used"><i class="fas fa-mobile-alt"></i> ${devCount}/${maxDev}</span>`;
 
+      return `<span class="item" style="justify-content:space-between;">
+        <span style="display:flex;align-items:center;gap:8px;flex:1;">
+          <span class="item-code">${esc(a.login_code)}</span>
+          <span class="item-name">${esc(a.name)}</span>
+          <span style="color:var(--text-faint);font-size:11.5px;">· ${esc(a.position)}</span>
+          ${devBadge}
+        </span>
+        <span class="item-actions">
+          <button onclick="resetDevice('aspirant','${esc(a.id)}')" title="Reset Devices"><i class="fas fa-mobile-alt"></i></button>
+          <button onclick="toggleAspirant('${esc(a.id)}')" title="Toggle Active"><i class="fas fa-power-off"></i></button>
+          <button onclick="openResetPwModal('aspirant','${esc(a.id)}')" title="Reset Password"><i class="fas fa-key"></i></button>
+          <button onclick="editAspirant('${esc(a.id)}')" title="Edit Aspirant"><i class="fas fa-pen"></i></button>
+          <button class="danger" onclick="deleteAspirant('${esc(a.id)}')" title="Delete Aspirant"><i class="fas fa-trash"></i></button>
+        </span>
+      </span>`;
+    }).join('') + '</div>';
+}
 function emptyHTML(title, sub) { return `<div class="empty"><i class="fas fa-inbox"></i><div style="font-weight:600;color:var(--text);margin-bottom:4px;">${title}</div><div>${sub}</div></div>`; }
 
 // ================================================================
@@ -3838,6 +3879,7 @@ function openAgentModal() {
     <div class="form-group"><label>Phone</label><input id="m_agentPhone"></div>
     <div class="form-group"><label>Email (for login)</label><input id="m_agentEmail" type="email"></div>
     <div class="form-group"><label>Password</label><input id="m_agentPass" type="password"></div>
+    <div class="form-group"><label>Max Devices <span class="hint">(Default 3)</span></label><input id="m_agentMaxDevices" type="number" value="3"></div>
     
     <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
       <label style="font-size: 14px; font-weight: 800; margin-bottom: 12px; display: block; color: var(--primary-dark);"><i class="fas fa-map-marker-alt"></i> Assign Streams</label>
@@ -3863,6 +3905,7 @@ function openAgentModal() {
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAgent()">Save</button></div>
   `);
 }
+  
  function editAgent(id) {
   var a = AGENTS.find(x => x.id === id); if (!a) return;
   
@@ -3876,6 +3919,7 @@ function openAgentModal() {
   openModal(modalHead('Edit Agent', id) + `
     <div class="form-group"><label>Name</label><input id="m_agentName" value="${escAttr(a.name)}"></div>
     <div class="form-group"><label>Phone</label><input id="m_agentPhone" value="${escAttr(a.phone||'')}"></div>
+     <div class="form-group"><label>Max Devices</label><input id="m_agentMaxDevices" type="number" value="${a.max_devices || 3}"></div>
     
     <div style="border-top: 1px solid var(--border); margin: 16px 0; padding-top: 16px;">
       <label style="font-size: 14px; font-weight: 800; margin-bottom: 12px; display: block; color: var(--primary-dark);"><i class="fas fa-map-marker-alt"></i> Assigned Streams</label>
@@ -3931,6 +3975,8 @@ async function saveAgent(id) {
   var phone = document.getElementById('m_agentPhone').value.trim();
   var county_id = document.getElementById('m_agentCounty').value;
   var streams = agentSelectedStreams; // Use the global array
+  var maxDev = parseInt(document.getElementById('m_agentMaxDevices').value) || 3;
+// Add max_devices: maxDev to your payload/rpc call
 
   if (!name) return toast('Enter agent name.', 'error');
   if (!county_id) return toast('Please select a County.', 'error');
@@ -3994,6 +4040,7 @@ function openAspirantModal() {
       <div class="form-group"><label>Email (for login)</label><input id="m_aspEmail" type="email"></div>
     </div>
     <div class="form-group"><label>Password</label><input id="m_aspPass" type="password"></div>
+    <div class="form-group"><label>Max Devices <span class="hint">(Default 3)</span></label><input id="m_aspMaxDevices" type="number" value="3"></div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAspirant()">Save</button></div>
   `);
 }
@@ -4018,7 +4065,8 @@ async function saveAspirant(id) {
   var name = document.getElementById('m_aspName').value.trim();
   var pos = document.getElementById('m_aspPosition').value;
   var login = document.getElementById('m_aspLogin').value.trim().toUpperCase();
-  
+  var maxDev = parseInt(document.getElementById('m_agentMaxDevices').value) || 3;
+// Add max_devices: maxDev to your payload/rpc call
   var county = document.getElementById('m_aspCounty') ? document.getElementById('m_aspCounty').value : null;
   var constId = document.getElementById('m_aspConst') ? document.getElementById('m_aspConst').value : null;
   var ward = document.getElementById('m_aspWard') ? document.getElementById('m_aspWard').value : null;
@@ -4098,6 +4146,7 @@ function editAspirant(id) {
     <div class="form-group" id="m_aspWardWrap" style="display:none;"><label>Ward</label><select id="m_aspWard">${wardOpts}</select></div>
     
     <div class="form-group"><label>Login Code</label><input id="m_aspLogin" value="${escAttr(a.login_code)}" style="text-transform:uppercase;"></div>
+     <div class="form-group"><label>Max Devices</label><input id="m_aspMaxDevices" type="number" value="${a.max_devices || 3}"></div>
     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveAspirant('${esc(id)}')">Save</button></div>
   `);
   aspPosChanged();
@@ -5468,6 +5517,27 @@ function closeCustomSelect() {
   document.getElementById('customSelectModal').classList.remove('active');
   activeSelectElement = null;
   isOpeningSelect = false;
+}
+  // ================================================================
+//  DEVICE MANAGEMENT
+// ================================================================
+async function resetDevice(kind, id) {
+  thConfirm({
+    title: 'Reset Devices?',
+    message: 'This will log the user out of all current devices and free up their slots. Their password will NOT change.',
+    confirmText: 'Reset Devices',
+    tone: 'danger',
+    icon: 'fa-mobile-alt'
+  }).then(async ok => {
+    if (!ok) return;
+    
+    var table = kind === 'agent' ? 'agents' : 'aspirants';
+    const { error } = await db.from(table).update({ device_ids: [] }).eq('id', id);
+    
+    if (error) return toast('Failed to reset devices.', 'error');
+    toast('Devices reset successfully.', 'success');
+    loadAllData();
+  });
 }
 </script>
 </body>
