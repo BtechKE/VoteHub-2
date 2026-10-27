@@ -616,6 +616,15 @@ body {
 const supabaseUrl = 'https://qkkhtglsstinsvbdmclt.supabase.co';
 const supabaseKey = 'sb_publishable_AEFOxR5dWWyQu9ZIaYMwLQ_4dPU-RM0';
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+// Helper to get/generate a unique device ID
+function getDeviceId() {
+  let devId = localStorage.getItem('tallyhub_device_id');
+  if (!devId) {
+    devId = 'DEV-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+    localStorage.setItem('tallyhub_device_id', devId);
+  }
+  return devId;
+}
 
 // ================================================================
 //  STATE & CONSTANTS
@@ -644,6 +653,22 @@ const POSITION_ICONS = {
 async function init() {
   const { data: { user } } = await db.auth.getUser();
   if (!user) { window.location.href = 'index.html'; return; }
+
+  // --- DEVICE LOCK CHECK ---
+  const devId = getDeviceId();
+  const { data: deviceCheck, error: devErr } = await db.rpc('verify_and_register_device', {
+    p_auth_id: user.id,
+    p_device_id: devId,
+    p_role: 'agent'
+  });
+  
+  if (devErr || !deviceCheck.success) {
+    db.auth.signOut();
+    alert(deviceCheck?.message || 'Device limit reached. Contact Admin.');
+    window.location.href = 'index.html';
+    return;
+  }
+  // --------------------------
 
   // Fetch agent profile
   const { data: profile } = await db.from('agents').select('*').eq('auth_user_id', user.id).single();
