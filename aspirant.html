@@ -627,6 +627,15 @@
 const supabaseUrl = 'https://qkkhtglsstinsvbdmclt.supabase.co';
 const supabaseKey = 'sb_publishable_AEFOxR5dWWyQu9ZIaYMwLQ_4dPU-RM0';
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+// Helper to get/generate a unique device ID
+function getDeviceId() {
+  let devId = localStorage.getItem('tallyhub_device_id');
+  if (!devId) {
+    devId = 'DEV-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+    localStorage.setItem('tallyhub_device_id', devId);
+  }
+  return devId;
+}
 
 // ================================================================
 //  CONSTANTS & STATE
@@ -675,6 +684,22 @@ async function init() {
   const { data: { user } } = await db.auth.getUser();
   if (!user) { window.location.href = 'index.html'; return; }
 
+  // --- DEVICE LOCK CHECK ---
+  const devId = getDeviceId();
+  const { data: deviceCheck, error: devErr } = await db.rpc('verify_and_register_device', {
+    p_auth_id: user.id,
+    p_device_id: devId,
+    p_role: 'aspirant'
+  });
+  
+  if (devErr || !deviceCheck.success) {
+    db.auth.signOut();
+    alert(deviceCheck?.message || 'Device limit reached. Contact Admin.');
+    window.location.href = 'index.html';
+    return;
+  }
+  // --------------------------
+
   const { data: profile } = await db.from('aspirants').select('*').eq('auth_user_id', user.id).single();
   if (!profile) { alert("Profile not found"); doLogout(); return; }
   
@@ -686,12 +711,13 @@ async function init() {
 
   document.getElementById('topName').textContent = USER.name || 'Viewer';
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
+
   // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
-if (USER.isSpectator || USER.position === 'President') {
-  SCOPE_MODE = 'national';
-  DRILL_LEVEL = 'constituency';
-  TRACKER_LEVEL = 'constituency'; // <-- ADD THIS
-  document.getElementById('nationalScopeWrap').style.display = 'flex';
+  if (USER.isSpectator || USER.position === 'President') {
+    SCOPE_MODE = 'national';
+    DRILL_LEVEL = 'constituency';
+    TRACKER_LEVEL = 'constituency';
+    document.getElementById('nationalScopeWrap').style.display = 'flex';
     
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
@@ -700,24 +726,23 @@ if (USER.isSpectator || USER.position === 'President') {
       document.getElementById('aspCountySelector').value = CURRENT_COUNTY;
     }
   } else {
-    // Fetch names for the premium badge
     let scopeName = 'Scope';
     if (USER.position === 'MCA') {
-  SCOPE_MODE = 'ward'; 
-  DRILL_LEVEL = 'centre';
-  TRACKER_LEVEL = 'centre'; // <-- ADD THIS
+      SCOPE_MODE = 'ward'; 
+      DRILL_LEVEL = 'centre';
+      TRACKER_LEVEL = 'centre';
       const { data: w } = await db.from('wards').select('name').eq('id', USER.ward).single();
       scopeName = w ? w.name + ' Ward' : 'Ward';
     } else if (USER.position === 'MP') {
-  SCOPE_MODE = 'constituency'; 
-  DRILL_LEVEL = 'ward';
-  TRACKER_LEVEL = 'ward'; // <-- ADD THIS
+      SCOPE_MODE = 'constituency'; 
+      DRILL_LEVEL = 'ward';
+      TRACKER_LEVEL = 'ward';
       const { data: c } = await db.from('constituencies').select('name').eq('id', USER.constituency).single();
       scopeName = c ? c.name + ' Constituency' : 'Constituency';
     } else {
-  SCOPE_MODE = 'county'; 
-  DRILL_LEVEL = 'constituency';
-  TRACKER_LEVEL = 'constituency'; // <-- ADD THIS
+      SCOPE_MODE = 'county'; 
+      DRILL_LEVEL = 'constituency';
+      TRACKER_LEVEL = 'constituency';
       const { data: c } = await db.from('counties').select('name').eq('id', USER.county).single();
       scopeName = c ? c.name + ' County' : 'County';
     }
@@ -730,7 +755,6 @@ if (USER.isSpectator || USER.position === 'President') {
   loadOverview();
   startAutoRefresh();
 }
-
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(function () {
