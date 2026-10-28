@@ -3039,8 +3039,11 @@ async function loadStreams() {
 }
 
 async function loadCandidates() {
-  // ONLY load candidates for the active county
-  const { data } = await db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY).order('name');
+  // Fetch candidates for the active county OR any National candidates (President)
+  const { data } = await db.from('candidates').select('*')
+    .or(`county_id.eq.${CURRENT_COUNTY},position.eq.President`)
+    .order('name');
+    
   CANDIDATES = data || []; 
   
   renderCandidates(); 
