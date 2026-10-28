@@ -3596,7 +3596,7 @@ function openCandidateModal() {
   var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
 
   openModal(modalHead('Add Candidate') + 
-    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
+    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode"></div>
@@ -3656,7 +3656,7 @@ function editCandidate(code) {
   var previewStyle = currentPhoto ? 'display:block;' : 'display:none;';
 
   openModal(modalHead('Edit Candidate', code) + 
-    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
+    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty" value="${escAttr(c.party)}"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode" value="${escAttr(c.code)}"></div>
@@ -3686,7 +3686,7 @@ function editCandidate(code) {
      </div>
      
      <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
-  candPosChanged();
+  ();
 }
   function previewImage(event) {
   var file = event.target.files[0];
@@ -3701,24 +3701,15 @@ function editCandidate(code) {
 }
 function candPosChanged() {
   var pos = document.getElementById('m_candPosition').value;
-  var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
+  var isNational = (pos === 'President'); // <--- NEW
+  var isCounty = (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
   var isConst  = (pos === 'MP');
   var isWard   = (pos === 'MCA');
 
+  // Hide county for President
   document.getElementById('m_candCountyWrap').style.display = (isCounty || isConst || isWard) ? 'block' : 'none';
   document.getElementById('m_candConstWrap').style.display  = (isConst || isWard) ? 'block' : 'none';
   document.getElementById('m_candWardWrap').style.display   = isWard ? 'block' : 'none';
-
-  // Auto-populate the cascade when editing (dropdowns start empty for MP/MCA)
-  var countyEl = document.getElementById('m_candCounty');
-  var constEl  = document.getElementById('m_candConst');
-  if ((isConst || isWard) && countyEl && countyEl.value && constEl.options.length <= 1) {
-    candCountyChanged();
-  }
-  if (isWard && constEl && constEl.value) {
-    var wardEl = document.getElementById('m_candWard');
-    if (wardEl && wardEl.options.length <= 1) candConstChanged();
-  }
 }
 function candCountyChanged() {
   var countyId = document.getElementById('m_candCounty').value;
@@ -3801,7 +3792,7 @@ function candConstChanged() {
       name: name, 
       party: party, 
       code: code, 
-      county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+      county_id: (pos !== 'MCA' && pos !== 'MP' && pos !== 'President') ? county : null,
       constituency_id: (pos === 'MP') ? constId : null,
       ward_id: (pos === 'MCA') ? ward : null,
       photo_url: finalPhotoUrl, 
