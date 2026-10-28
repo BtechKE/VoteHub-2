@@ -3595,7 +3595,7 @@ function openCandidateModal() {
   var posOpts = POSITIONS.map(p => `<option value="${p}">${p}</option>`).join('');
   var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
 
-  openModal(modalHead('Add Candidate') + 
+  openModal(modalHead('Add Candidate') + `
     <div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty"></div>
@@ -3625,7 +3625,8 @@ function openCandidateModal() {
        <select id="m_candWard"><option value="">— Select ward —</option></select>
      </div>
      
-     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate()">Save</button></div>`);
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate()">Save</button></div>
+  `);
 }
 function editCandidate(code) {
   var c = CANDIDATES.find(x => x.code === code); if (!c) return;
