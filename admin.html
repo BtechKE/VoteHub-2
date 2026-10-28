@@ -3701,15 +3701,26 @@ function editCandidate(code) {
 }
 function candPosChanged() {
   var pos = document.getElementById('m_candPosition').value;
-  var isNational = (pos === 'President'); // <--- NEW
+  
+  // President is National. Governor/Senator/Women Rep are County.
   var isCounty = (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
   var isConst  = (pos === 'MP');
   var isWard   = (pos === 'MCA');
 
-  // Hide county for President
   document.getElementById('m_candCountyWrap').style.display = (isCounty || isConst || isWard) ? 'block' : 'none';
   document.getElementById('m_candConstWrap').style.display  = (isConst || isWard) ? 'block' : 'none';
   document.getElementById('m_candWardWrap').style.display   = isWard ? 'block' : 'none';
+
+  // Auto-populate the cascade when editing
+  var countyEl = document.getElementById('m_candCounty');
+  var constEl  = document.getElementById('m_candConst');
+  if ((isConst || isWard) && countyEl && countyEl.value && constEl.options.length <= 1) {
+    candCountyChanged();
+  }
+  if (isWard && constEl && constEl.value) {
+    var wardEl = document.getElementById('m_candWard');
+    if (wardEl && wardEl.options.length <= 1) candConstChanged();
+  }
 }
 function candCountyChanged() {
   var countyId = document.getElementById('m_candCounty').value;
@@ -3787,11 +3798,12 @@ function candConstChanged() {
     // --- 2. SAVE CANDIDATE TO DATABASE ---
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
     
-    var payload = { 
+       var payload = { 
       position: pos, 
       name: name, 
       party: party, 
       code: code, 
+      // Ensure President gets a NULL county_id
       county_id: (pos !== 'MCA' && pos !== 'MP' && pos !== 'President') ? county : null,
       constituency_id: (pos === 'MP') ? constId : null,
       ward_id: (pos === 'MCA') ? ward : null,
