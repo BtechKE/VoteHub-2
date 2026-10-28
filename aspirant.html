@@ -809,8 +809,8 @@ async function loadOverview(silent) {
     const { data: streamsData } = await streamQuery;
 
     // 2. Fetch Candidates & Results
-        let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
-    // If it's NOT a President, filter by county. President is National.
+       let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
+    // If it is NOT the President, filter by the active county
     if (VIEW_POS !== 'President' && activeCounty) {
         candQuery = candQuery.eq('county_id', activeCounty);
     }
