@@ -3596,7 +3596,7 @@ function openCandidateModal() {
   var countyOpts = `<option value="">— Select county —</option>` + COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
 
   openModal(modalHead('Add Candidate') + 
-    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="()">${posOpts}</select></div>
+    <div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode"></div>
@@ -3656,7 +3656,7 @@ function editCandidate(code) {
   var previewStyle = currentPhoto ? 'display:block;' : 'display:none;';
 
   openModal(modalHead('Edit Candidate', code) + 
-    `<div class="form-group"><label>Position</label><select id="m_candPosition" onchange="()">${posOpts}</select></div>
+    <div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty" value="${escAttr(c.party)}"></div>
      <div class="form-group"><label>Code</label><input id="m_candCode" value="${escAttr(c.code)}"></div>
@@ -3685,8 +3685,8 @@ function editCandidate(code) {
        <select id="m_candWard">${wardOpts}</select>
      </div>
      
-     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
-  ();
+        <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
+  candPosChanged();
 }
   function previewImage(event) {
   var file = event.target.files[0];
