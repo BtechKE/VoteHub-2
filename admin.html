@@ -3656,7 +3656,7 @@ function editCandidate(code) {
   var currentPhoto = normalizeImageUrl(c.photo_url);
   var previewStyle = currentPhoto ? 'display:block;' : 'display:none;';
 
-  openModal(modalHead('Edit Candidate', code) + 
+  openModal(modalHead('Edit Candidate', code) + `
     <div class="form-group"><label>Position</label><select id="m_candPosition" onchange="candPosChanged()">${posOpts}</select></div>
      <div class="form-group"><label>Name</label><input id="m_candName" value="${escAttr(c.name)}"></div>
      <div class="form-group"><label>Party</label><input id="m_candParty" value="${escAttr(c.party)}"></div>
@@ -3686,7 +3686,8 @@ function editCandidate(code) {
        <select id="m_candWard">${wardOpts}</select>
      </div>
      
-        <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>`);
+     <div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="m_candSaveBtn" onclick="saveCandidate('${esc(code)}')">Save</button></div>
+  `);
   candPosChanged();
 }
   function previewImage(event) {
