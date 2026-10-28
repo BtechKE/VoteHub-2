@@ -809,8 +809,11 @@ async function loadOverview(silent) {
     const { data: streamsData } = await streamQuery;
 
     // 2. Fetch Candidates & Results
-    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
-    if (SCOPE_MODE !== 'national') candQuery = candQuery.eq('county_id', USER.county);
+        let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
+    // If it's NOT a President, filter by county. President is National.
+    if (VIEW_POS !== 'President' && activeCounty) {
+        candQuery = candQuery.eq('county_id', activeCounty);
+    }
     const { data: cands } = await candQuery;
 
     const { data: resultsData } = await db.from('results').select('stream_code, candidate_code, votes').eq('position', VIEW_POS);
