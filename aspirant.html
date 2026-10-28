@@ -1176,7 +1176,6 @@ function renderHero() {
   var scopeLabel = '';
   
   if (DRILL_LEVEL === 'county') { 
-      // NATIONAL LEVEL (President viewing all 47 counties)
       scopedVotes = {}; 
       var keys = Object.keys(OVERVIEW.votesByCounty || {}); 
       keys.forEach(k => { 
@@ -1188,11 +1187,9 @@ function renderHero() {
   }
   else if (DRILL_LEVEL === 'constituency') { 
       if (SCOPE_MODE === 'national') {
-          // PRESIDENT drilled into one county
           scopedVotes = OVERVIEW.votesByCounty[DRILL_COUNTY_ID] || {}; 
           scopeLabel = DRILL_COUNTY_NAME; 
       } else {
-          // GOVERNOR/SENATOR viewing their whole county
           scopedVotes = {}; 
           var constKeys = Object.keys(OVERVIEW.votesByConst || {}); 
           constKeys.forEach(k => { 
@@ -1200,7 +1197,7 @@ function renderHero() {
                   scopedVotes[c] = (scopedVotes[c]||0) + OVERVIEW.votesByConst[k][c]; 
               } 
           }); 
-          scopeLabel = CONFIG.County || 'Overall County'; 
+          scopeLabel = 'Overall County'; // <--- FIXED HERE
       }
   }
   else if (DRILL_LEVEL === 'ward') { 
@@ -1215,6 +1212,7 @@ function renderHero() {
       scopedVotes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {}; 
       scopeLabel = DRILL_CENTRE_NAME; 
   }
+
   var cands = Object.keys(scopedVotes).map(code => ({ ...OVERVIEW.candMap[code], votes: scopedVotes[code] })).sort((a,b)=>b.votes-a.votes);
   var total = cands.reduce((s,c)=>s+c.votes, 0);
   var leader = cands[0];
