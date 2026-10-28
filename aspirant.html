@@ -790,7 +790,7 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
-    // 1. Fetch Geography based on scope
+    // 1. Fetch Geography
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
@@ -808,32 +808,32 @@ async function loadOverview(silent) {
     let streamQuery = db.from('streams').select('*').in('centre_id', (centresData||[]).map(c=>c.id));
     const { data: streamsData } = await streamQuery;
 
-    // 2. Fetch Candidates & Results
-       let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
-    // If it is NOT the President, filter by the active county
-    if (VIEW_POS !== 'President' && activeCounty) {
-        candQuery = candQuery.eq('county_id', activeCounty);
+    // 2. Fetch Candidates
+    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
+    // If the position is NOT President, filter by the user's county
+    if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
+        candQuery = candQuery.eq('county_id', USER.county);
     }
     const { data: cands } = await candQuery;
 
+    // 3. Fetch Results
     const { data: resultsData } = await db.from('results').select('stream_code, candidate_code, votes').eq('position', VIEW_POS);
 
-    // 3. Build Lookup Maps
+    // 4. Build Lookup Maps
     const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
     const streamMap = {}; (streamsData || []).forEach(s => streamMap[s.code] = s);
     const centreMap = {}; (centresData || []).forEach(c => centreMap[c.id] = c);
     const wardMap = {}; (wardsData || []).forEach(w => wardMap[w.id] = w);
     const constMap = {}; (consts || []).forEach(c => constMap[c.id] = c);
 
-    // Fetch all counties for the national scope
+    // Fetch all counties for the national scope (President/Spectator)
     let countiesData = [];
     if (SCOPE_MODE === 'national') {
       const { data: cData } = await db.from('counties').select('*').order('name');
       countiesData = cData || [];
     }
-    const countyMap = {}; countiesData.forEach(c => countyMap[c.id] = c);
-
-    // 4. Aggregate Votes
+    
+    // 5. Aggregate Votes
     const votesByCounty = {};
     const votesByConst = {};
     const votesByWard = {};
@@ -871,7 +871,7 @@ async function loadOverview(silent) {
       votesByCounty[countyId][r.candidate_code] = (votesByCounty[countyId][r.candidate_code]||0) + r.votes;
     });
 
-    // 5. Format Global Leaderboard
+    // 6. Format Global Leaderboard
     let leaderboard = (cands || []).map(c => ({
       code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
@@ -900,7 +900,6 @@ async function loadOverview(silent) {
     console.error(err); setPulse('stale'); if (!silent) toast('Connection error.', 'error');
   }
 }
-    
 
 async function loadDrill(silent) {
   try {
