@@ -3039,12 +3039,11 @@ async function loadStreams() {
 }
 
 async function loadCandidates() {
-  // Fetch candidates for the active county OR any National candidates (President)
-  const { data } = await db.from('candidates').select('*')
-    .or(`county_id.eq.${CURRENT_COUNTY},position.eq.President`)
-    .order('name');
-    
-  CANDIDATES = data || []; 
+  // Fetch ALL candidates first, then filter in JS
+  const { data } = await db.from('candidates').select('*').order('name');
+  
+  // Keep candidates for the current county OR any National candidates (President)
+  CANDIDATES = (data || []).filter(c => c.county_id === CURRENT_COUNTY || c.position === 'President');
   
   renderCandidates(); 
   document.getElementById('statCandidates').textContent = CANDIDATES.length; 
