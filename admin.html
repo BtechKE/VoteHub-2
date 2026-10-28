@@ -4892,123 +4892,125 @@ async function generatePDF() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
 
   try {
-    const [ { data: cands }, { data: resultsData }, { data: formsData } ] = await Promise.all([
-      db.from('candidates').select('*').eq('county_id', CURRENT_COUNTY).eq('position', pos), 
-      db.from('results').select('stream_code, candidate_code, votes').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos),
-      db.from('form_photos').select('stream_code').in('stream_code', STREAMS.map(s=>s.code)).eq('position', pos)
+    // 1. Fetch data based on scope (National for President, County for others)
+    var isNational = (pos === 'President');
+    
+    let resultsQuery = db.from('results').select('stream_code, candidate_code, votes').eq('position', pos);
+    let formsQuery = db.from('form_photos').select('stream_code').eq('position', pos);
+    
+    if (!isNational) {
+      resultsQuery = resultsQuery.in('stream_code', STREAMS.map(s=>s.code));
+      formsQuery = formsQuery.in('stream_code', STREAMS.map(s=>s.code));
+    }
+
+    const [ { data: cands }, { data: resultsData }, { data: formsData }, { data: allStreams }, { data: allWards }, { data: allConsts }, { data: allCounties } ] = await Promise.all([
+      db.from('candidates').select('*').eq('position', pos), 
+      resultsQuery,
+      formsQuery,
+      isNational ? db.from('streams').select('*') : { data: STREAMS },
+      isNational ? db.from('wards').select('*') : { data: WARDS },
+      isNational ? db.from('constituencies').select('*') : { data: CONSTITUENCIES },
+      isNational ? db.from('counties').select('*') : { data: COUNTIES.filter(c=>c.id===CURRENT_COUNTY) }
     ]);
 
+    // 2. Build Lookup Maps
     var candMap = {}; (cands||[]).forEach(c => candMap[c.code] = c);
-    var streamMap = {}; STREAMS.forEach(s => streamMap[s.code] = s);
-    var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
-    var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
-
-    var totalByCand = {}, votesByWard = {}, votesByCentre = {};
-    var formsByWard = {}, formsByCentre = {};
+    var streamMap = {}; (allStreams||[]).forEach(s => streamMap[s.code] = s);
+    var wardMap = {}; (allWards||[]).forEach(w => wardMap[w.id] = w);
+    var constMap = {}; (allConsts||[]).forEach(c => constMap[c.id] = c);
+    
+    // 3. Aggregate Votes & Forms (Down to the Ward level)
+    var totalByCand = {}, votesByWard = {}, formsByWard = {};
     
     (resultsData || []).forEach(r => {
       var stream = streamMap[r.stream_code]; if(!stream) return;
-      var centre = centreMap[stream.centre_id]; if(!centre) return;
-      var ward = wardMap[centre.ward_id]; if(!ward) return;
+      var ward = wardMap[stream.ward_id]; if(!ward) return;
 
       if(!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
       totalByCand[r.candidate_code] += r.votes;
 
       if(!votesByWard[ward.id]) votesByWard[ward.id] = {};
       votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
-
-      if(!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
-      votesByCentre[centre.id][r.candidate_code] = (votesByCentre[centre.id][r.candidate_code]||0) + r.votes;
     });
 
     (formsData || []).forEach(f => {
       var stream = streamMap[f.stream_code]; if(!stream) return;
-      var centre = centreMap[stream.centre_id]; if(!centre) return;
-      var ward = wardMap[centre.ward_id]; if(!ward) return;
-
+      var ward = wardMap[stream.ward_id]; if(!ward) return;
       formsByWard[ward.id] = (formsByWard[ward.id]||0) + 1;
-      formsByCentre[centre.id] = (formsByCentre[centre.id]||0) + 1;
     });
 
+    // 4. Build Overall Leaderboard
     var leaderboard = (cands||[]).map(c => ({
       name: c.name, party: c.party, votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
     var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
 
+    // 5. Build the Hierarchy
     var hierarchy = [];
     
-    var scopeConsts = (ADMIN_DRILL_LEVEL !== 'constituency' && ADMIN_DRILL_CONST_ID) ? CONSTITUENCIES.filter(c => c.id === ADMIN_DRILL_CONST_ID) : CONSTITUENCIES;
-    var scopeWards = (ADMIN_DRILL_LEVEL === 'centre' || ADMIN_DRILL_LEVEL === 'stream') && ADMIN_DRILL_WARD ? WARDS.filter(w => w.id === ADMIN_DRILL_WARD) : WARDS;
+    (allCounties || []).forEach(county => {
+      var cConsts = (allConsts || []).filter(c => c.county_id === county.id);
+      var countyWardsArr = [];
+      var countyForms = 0;
+      var countyVotesObj = {};
 
-    if (pos === 'MCA') {
-      scopeWards.forEach(w => {
-        var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
-          name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
-        })).sort((a,b)=>b.votes-a.votes);
-        var wTotal = wCands.reduce((s,c)=>s+c.votes, 0);
+      cConsts.forEach(cst => {
+        var cWards = (allWards || []).filter(w => w.constituency_id === cst.id);
         
-        var centresArr = CENTRES.filter(c => c.ward_id === w.id).map(c => {
-          var cCands = Object.keys(votesByCentre[c.id]||{}).map(code => ({
-            name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByCentre[c.id][code]
-          })).sort((a,b)=>b.votes-a.votes);
-          var cTotal = cCands.reduce((s,x)=>s+x.votes, 0);
-          var cStreams = STREAMS.filter(s => s.centre_id === c.id);
-          return { name: c.name, candidates: cCands, totalVotes: cTotal, totalStreams: cStreams.length, formsCount: formsByCentre[c.id] || 0 };
-        });
-
-        hierarchy.push({ name: w.name, type: 'Ward', candidates: wCands, totalVotes: wTotal, subAreas: centresArr, formsCount: formsByWard[w.id] || 0 });
-      });
-    } else {
-      scopeConsts.forEach(cst => {
-        var cWards = scopeWards.filter(w => w.constituency_id === cst.id);
-        var cVotes = {};
         cWards.forEach(w => {
-          if(votesByWard[w.id]) {
-            for(let code in votesByWard[w.id]) {
-              cVotes[code] = (cVotes[code]||0) + votesByWard[w.id][code];
-            }
-          }
-        });
-
-        var cCands = Object.keys(cVotes).map(code => ({
-          name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: cVotes[code]
-        })).sort((a,b)=>b.votes-a.votes);
-        var cTotal = cCands.reduce((s,c)=>s+c.votes, 0);
-        
-        var wardsArr = cWards.map(w => {
           var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
             name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
           })).sort((a,b)=>b.votes-a.votes);
-          var wTotal = wCands.reduce((s,c)=>s+c.votes, 0);
-          var wStreams = STREAMS.filter(s => centreMap[s.centre_id]?.ward_id === w.id);
           
-          return { name: w.name, candidates: wCands, totalVotes: wTotal, totalStreams: wStreams.length, formsCount: formsByWard[w.id] || 0 };
+          var wTotal = wCands.reduce((s,c)=>s+c.votes, 0);
+          var wStreams = allStreams.filter(s => s.ward_id === w.id);
+          var wForms = formsByWard[w.id] || 0;
+
+          // Add to county totals
+          countyForms += wForms;
+          wCands.forEach(c => {
+            countyVotesObj[c.name] = (countyVotesObj[c.name]||0) + c.votes;
+          });
+
+          // Only add if there is data to save space on the PDF
+          if (wCands.length > 0 || wStreams.length > 0) {
+            countyWardsArr.push({
+              constituencyName: cst.name,
+              wardName: w.name, candidates: wCands, totalVotes: wTotal, 
+              totalStreams: wStreams.length, formsCount: wForms
+            });
+          }
         });
-
-        hierarchy.push({ name: cst.name, type: 'Constituency', candidates: cCands, totalVotes: cTotal, subAreas: wardsArr, formsCount: cWards.reduce((s,w)=>s+(formsByWard[w.id]||0), 0) });
       });
-    }
 
-    // --- NEW LOGIC: DECIDE IF WE SHOW OVERALL LEADERBOARD ---
-    var showOverall = false;
-    if (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
-      showOverall = true; 
-    } else if (pos === 'MP' && ADMIN_DRILL_LEVEL !== 'constituency') {
-      showOverall = true; // Show if they drilled into a specific constituency
-    } else if (pos === 'MCA' && (ADMIN_DRILL_LEVEL === 'centre' || ADMIN_DRILL_LEVEL === 'stream')) {
-      showOverall = true; // Show if they drilled into a specific ward
-    }
+      if (countyWardsArr.length > 0) {
+        var countyCands = Object.keys(countyVotesObj).map(name => {
+          var originalCand = (cands||[]).find(c => c.name === name) || {};
+          return { name: name, party: originalCand.party || '', votes: countyVotesObj[name] };
+        }).sort((a,b)=>b.votes-a.votes);
 
+        hierarchy.push({
+          countyName: county.name,
+          candidates: countyCands,
+          totalVotes: countyCands.reduce((s,c)=>s+c.votes,0),
+          subAreas: countyWardsArr,
+          formsCount: countyForms
+        });
+      }
+    });
+
+    // 6. Generate the PDF
     var data = {
       position: pos,
-      county: CONFIG.County || COUNTIES.find(c=>c.id===CURRENT_COUNTY)?.name || 'County',
+      county: isNational ? 'Republic of Kenya' : (CONFIG.County || COUNTIES.find(c=>c.id===CURRENT_COUNTY)?.name || 'County'),
       leaderboard: leaderboard,
       totalVotes: totalVotes,
       hierarchy: hierarchy,
+      isNational: isNational,
       reported: new Set((resultsData||[]).map(r => r.stream_code)).size,
-      totalStreams: STREAMS.length,
+      totalStreams: allStreams.length,
       generatedAt: new Date().toISOString(),
-      showOverall: showOverall // Pass the flag
+      showOverall: true
     };
 
     buildPositionPDF(data);
@@ -5022,6 +5024,8 @@ async function generatePDF() {
     btn.innerHTML = '<i class="fas fa-file-pdf"></i> Generate PDF';
   }
 }
+
+  
 function buildPositionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
@@ -5058,48 +5062,44 @@ function buildPositionPDF(data) {
   drawHeader();
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(22); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(data.position.toUpperCase(), marginL, currentY + 4);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.county + ' County', marginL, currentY + 11);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(data.county, marginL, currentY + 11);
   doc.setFontSize(8.5); doc.text(timestamp + ' · ' + data.reported + ' of ' + data.totalStreams + ' streams reported', marginL, currentY + 17);
   currentY += 24;
 
   doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(1); doc.line(marginL, currentY, pageW - marginR, currentY); currentY += 8;
 
-  // ONLY SHOW OVERALL LEADERBOARD IF FLAG IS TRUE
-  if (data.showOverall) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('OVERALL LEADERBOARD', marginL, currentY);
-    currentY += 6;
+  // Overall Leaderboard
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('OVERALL LEADERBOARD', marginL, currentY);
+  currentY += 6;
 
-    if (!data.leaderboard.length) {
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
-    } else {
-      var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
-      doc.autoTable({
-        startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
-        styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
-        headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
-        columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
-        margin: { left: marginL, right: marginR }
-      });
-      currentY = doc.lastAutoTable.finalY + 8;
-    }
+  if (!data.leaderboard.length) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.text('No results recorded yet.', marginL, currentY); currentY += 6;
+  } else {
+    var rows = data.leaderboard.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), data.totalVotes > 0 ? ((c.votes / data.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
+    doc.autoTable({
+      startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 3, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
+      headStyles: { fontStyle: 'bold', fontSize: 8, textColor: SLATE, fillColor: [250, 250, 250], lineWidth: { bottom: 0.3 }, lineColor: GREEN_DARK },
+      columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 40, textColor: SLATE }, 3: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 18, halign: 'right', textColor: SLATE } },
+      margin: { left: marginL, right: marginR }
+    });
+    currentY = doc.lastAutoTable.finalY + 8;
   }
 
   // Hierarchical Breakdown
   data.hierarchy.forEach(h => {
     if (currentY > contentBottom - 30) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
     
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(INK[0], INK[1], INK[2]); 
-    doc.text(h.name.toUpperCase() + ' ' + h.type.toUpperCase(), marginL, currentY);
+    var mainTitle = data.isNational ? h.countyName.toUpperCase() + ' COUNTY' : h.name.toUpperCase() + ' ' + h.type.toUpperCase();
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); 
+    doc.text(mainTitle, marginL, currentY);
     
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
     doc.text('Evidence Forms: ' + h.formsCount, pageW - marginR, currentY, { align: 'right' });
     currentY += 4;
 
-    if (h.candidates.length === 0) {
-       doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
-       doc.text('No votes recorded yet.', marginL, currentY + 2);
-       currentY += 6;
-    } else {
+    // Main Area Candidates (County or Constituency totals)
+    if (h.candidates.length > 0) {
       var cRows = h.candidates.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), h.totalVotes > 0 ? ((c.votes / h.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
       doc.autoTable({
         startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: cRows, theme: 'plain',
@@ -5111,33 +5111,41 @@ function buildPositionPDF(data) {
       currentY = doc.lastAutoTable.finalY + 6;
     }
 
+    // Sub-Areas
+    var currentConstName = '';
     h.subAreas.forEach(sub => {
       if (currentY > contentBottom - 20) { drawFooter(); doc.addPage(); currentY = contentTop; drawHeader(); }
-      
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
-      doc.text(sub.name + (h.type === 'Ward' ? ' Centre' : ' Ward'), marginL, currentY);
+
+      // If national, print the Constituency header before the wards
+      if (data.isNational && sub.constituencyName !== currentConstName) {
+        currentConstName = sub.constituencyName;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(INK[0], INK[1], INK[2]);
+        doc.text(currentConstName.toUpperCase() + ' CONSTITUENCY', marginL + 4, currentY);
+        currentY += 5;
+      }
+
+      var subTitle = data.isNational ? sub.wardName + ' Ward' : sub.name + ' Ward';
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
+      doc.text(subTitle, marginL + 6, currentY);
       
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); 
-      // Show "No Streams" if totalStreams is 0
       var formText = sub.totalStreams === 0 ? 'No Streams' : 'Forms: ' + sub.formsCount + '/' + sub.totalStreams;
       doc.text(formText, pageW - marginR, currentY, { align: 'right' });
       currentY += 4;
 
-      if (sub.candidates.length === 0) {
-         doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.text('No votes recorded.', marginL + 4, currentY + 2); currentY += 5;
-      } else {
+      if (sub.candidates.length > 0) {
         var wRows = sub.candidates.map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), sub.totalVotes > 0 ? ((c.votes / sub.totalVotes) * 100).toFixed(1) + '%' : '0.0%']);
         doc.autoTable({
           startY: currentY, head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: wRows, theme: 'plain',
           styles: { font: 'helvetica', fontSize: 8, cellPadding: 1.5, textColor: INK, lineColor: BORDER, lineWidth: 0.1 },
           headStyles: { fontStyle: 'bold', fontSize: 7, textColor: SLATE, fillColor: [250, 250, 250] },
           columnStyles: { 0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' }, 2: { cellWidth: 30, textColor: SLATE }, 3: { cellWidth: 18, halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 15, halign: 'right', textColor: SLATE } },
-          margin: { left: marginL + 4, right: marginR }
+          margin: { left: marginL + 6, right: marginR }
         });
-        currentY = doc.lastAutoTable.finalY + 6;
+        currentY = doc.lastAutoTable.finalY + 4;
       }
     });
-    currentY += 4; 
+    currentY += 6; 
   });
 
   for (var p = 1; p <= doc.internal.getNumberOfPages(); p++) { doc.setPage(p); drawFooter(); }
