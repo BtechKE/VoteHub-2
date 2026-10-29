@@ -718,7 +718,7 @@ async function init() {
     if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
     DRILL_LEVEL = 'county';      // <--- MUST BE 'county'
-    TRACKER_LEVEL = 'county';    // <--- MUST BE 'county'
+    TRACKER_LEVEL = 'constituency'; 
     document.getElementById('nationalScopeWrap').style.display = 'flex';
     // ...
     
@@ -993,6 +993,7 @@ async function loadTracker(silent) {
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
+    else if (SCOPE_MODE === 'national' && CURRENT_COUNTY) constQuery = constQuery.eq('county_id', CURRENT_COUNTY);
     const { data: constsData } = await constQuery;
 
     let wardQuery = db.from('wards').select('*');
@@ -1003,17 +1004,16 @@ async function loadTracker(silent) {
 
     filterWardIds = (wardsData || []).map(w => w.id);
 
-    // FIX: Prevent massive URL crashes for National Scope
-    // If National, we don't filter by 1450 wards. We just fetch the latest 1000 streams so it doesn't hang.
     var centreQuery = db.from('centres').select('*');
     var streamQuery = db.from('streams').select('*');
     
-    if (SCOPE_MODE !== 'national') {
+    // If we have a specific county selected, filter by those wards
+    if (SCOPE_MODE !== 'national' || CURRENT_COUNTY) {
         centreQuery = centreQuery.in('ward_id', filterWardIds);
         streamQuery = streamQuery.in('ward_id', filterWardIds);
     } else {
-        // National Tracker Demo Limit (prevents infinite spin)
-        streamQuery = streamQuery.limit(1000); 
+        // National Tracker Demo Limit
+        streamQuery = streamQuery.limit(2000); 
     }
 
     const [ { data: centresData }, { data: streamsData } ] = await Promise.all([
@@ -1022,13 +1022,11 @@ async function loadTracker(silent) {
 
     var streamCodes = (streamsData || []).map(s => s.code);
     
-    // FETCH RESULTS AND FORMS
     const [ { data: resultsData }, { data: formsData } ] = await Promise.all([
         db.from('results').select('stream_code, position').in('stream_code', streamCodes),
         db.from('form_photos').select('stream_code, position, photo_url').in('stream_code', streamCodes)
     ]);
 
-    // Build the FORMS dictionary
     TRACKER_FORMS = {};
     (formsData || []).forEach(f => {
         TRACKER_FORMS[f.stream_code + '_' + f.position] = f.photo_url;
@@ -1070,7 +1068,7 @@ async function loadTracker(silent) {
         return { 
             wardId: w.id, 
             wardName: w.name, 
-            constituency_id: w.constituency_id, // <-- CRITICAL for grouping!
+            constituency_id: w.constituency_id, 
             streamsTotal: wStreamsTotal, 
             streamsComplete: wStreamsComplete, 
             cellsDone: wCellsDone, 
@@ -1497,8 +1495,16 @@ function renderBoard() {
   var scopedCandidates = [];
 
   // Figure out which candidates to show based on the Drill Level
-  if (DRILL_LEVEL === 'constituency') {
-    scopedCandidates = OVERVIEW.leaderboard;
+  if (DRILL_LEVEL === 'county') {
+    scopedCandidates = OVERVIEW.leaderboard; // <--- ADD THIS
+  } else if (DRILL_LEVEL === 'constituency') {
+    if (SCOPE_MODE === 'national') {
+        // President viewing a specific county
+        var votes = OVERVIEW.votesByCounty[DRILL_COUNTY_ID] || {};
+        scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
+    } else {
+        scopedCandidates = OVERVIEW.leaderboard;
+    }
   } else if (DRILL_LEVEL === 'ward') {
     var votes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {};
     scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
@@ -1509,7 +1515,6 @@ function renderBoard() {
     var votes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {};
     scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
   }
-
   var total = scopedCandidates.reduce((s,c)=>s+c.votes, 0);
   if (!scopedCandidates.length) { el.innerHTML = '<div class="empty">No candidates.</div>'; return; }
 
