@@ -715,11 +715,12 @@ async function init() {
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
   // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
-   if (USER.isSpectator || USER.position === 'President') {
+    if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
-    DRILL_LEVEL = 'constituency'; // <--- CHANGE THIS TO 'county'
-    TRACKER_LEVEL = 'county'; // <--- CHANGE THIS TO 'county'
+    DRILL_LEVEL = 'county';      // <--- MUST BE 'county'
+    TRACKER_LEVEL = 'county';    // <--- MUST BE 'county'
     document.getElementById('nationalScopeWrap').style.display = 'flex';
+    // ...
     
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
@@ -757,6 +758,16 @@ async function init() {
   loadOverview();
   startAutoRefresh();
 }
+  function switchAspCounty(countyId) {
+  CURRENT_COUNTY = countyId;
+  // Reset to top level
+  DRILL_LEVEL = 'county';
+  DRILL_COUNTY_ID = ''; DRILL_COUNTY_NAME = '';
+  DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
+  DRILL_WARD = ''; DRILL_WARD_NAME = '';
+  DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+  loadOverview();
+}
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(function () {
@@ -790,7 +801,7 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
-    // 1. Fetch Geography
+    // 1. Fetch Geography (Optimized for National Scope)
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
@@ -799,18 +810,25 @@ async function loadOverview(silent) {
     let wardQuery = db.from('wards').select('*');
     if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
     else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
-    else wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
+    else if (SCOPE_MODE !== 'national') wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
     const { data: wardsData } = await wardQuery;
 
-    let centreQuery = db.from('centres').select('*').in('ward_id', (wardsData||[]).map(w=>w.id));
+    // FIX: If National, don't pass a massive list of IDs. Just fetch all.
+    let centreQuery = db.from('centres').select('*');
+    if (SCOPE_MODE !== 'national') {
+        centreQuery = centreQuery.in('ward_id', (wardsData||[]).map(w=>w.id));
+    }
     const { data: centresData } = await centreQuery;
 
-    let streamQuery = db.from('streams').select('*').in('centre_id', (centresData||[]).map(c=>c.id));
+    // FIX: Same here. If National, fetch all streams.
+    let streamQuery = db.from('streams').select('*');
+    if (SCOPE_MODE !== 'national') {
+        streamQuery = streamQuery.in('centre_id', (centresData||[]).map(c=>c.id));
+    }
     const { data: streamsData } = await streamQuery;
 
     // 2. Fetch Candidates
     let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
-    // If the position is NOT President, filter by the user's county
     if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
         candQuery = candQuery.eq('county_id', USER.county);
     }
@@ -1277,22 +1295,23 @@ function renderDrillGrid() {
   renderBreadcrumb();
 
   function buildCard(item, votesMap, typeLabel, onClickAction) {
+    if (!item) return '';
     var itemKey = item.id || item.code;
-    var votes = votesMap[itemKey] || {};
+    var votes = (votesMap && votesMap[itemKey]) ? votesMap[itemKey] : {};
     var topCode = Object.keys(votes).sort((a,b) => votes[b] - votes[a])[0];
-    var topCand = OVERVIEW.candMap[topCode];
+    var topCand = OVERVIEW && OVERVIEW.candMap ? OVERVIEW.candMap[topCode] : null;
     var total = Object.values(votes).reduce((s,v) => s+v, 0);
     var pct = total > 0 && topCand ? ((votes[topCode]/total)*100).toFixed(1) : '0.0';
     
     var tintStyle = 'border-left: none !important;';
-    if (topCand && topCand.color) {
+    if (topCand && topCand.color && typeof tintBg === 'function') {
       tintStyle += ` background: linear-gradient(to right, ${tintBg(topCand.color, 0.08)} 0%, #FFFFFF 50%) !important;`;
     }
     
     var leaderHtml = topCand ? `
       <div class="card-leader">
         <div class="avatar-wrap with-crown">
-          <img src="${topCand.photo_url}" onerror="this.src='';this.parentElement.textContent='${topCand.name.charAt(0)}'">
+          <img src="${topCand.photo_url}" onerror="this.src='';this.parentElement.textContent='${topCand.name ? topCand.name.charAt(0) : '?'}'">
           <span class="avatar-crown"><i class="fas fa-crown"></i></span>
         </div>
         <div class="card-leader-info">
@@ -1316,14 +1335,15 @@ function renderDrillGrid() {
   }
 
   if (DRILL_LEVEL === 'county') {
-    el.innerHTML = OVERVIEW.counties.map(c => 
+    var myCounties = OVERVIEW && OVERVIEW.counties ? OVERVIEW.counties : [];
+    el.innerHTML = myCounties.map(c => 
       buildCard(c, OVERVIEW.votesByCounty, 'County', `drillDown('constituency', '${c.id}', '${c.name}')`)
     ).join('');
     return;
   }
 
   if (DRILL_LEVEL === 'constituency') {
-    var myConsts = OVERVIEW.consts.filter(c => SCOPE_MODE !== 'national' || c.county_id === DRILL_COUNTY_ID);
+    var myConsts = OVERVIEW.consts ? OVERVIEW.consts.filter(c => SCOPE_MODE !== 'national' || c.county_id === DRILL_COUNTY_ID) : [];
     el.innerHTML = myConsts.map(c => 
       buildCard(c, OVERVIEW.votesByConst, 'Constituency', `drillDown('ward', '${c.id}', '${c.name}')`)
     ).join('');
@@ -1331,7 +1351,7 @@ function renderDrillGrid() {
   }
 
   if (DRILL_LEVEL === 'ward') {
-    var myWards = OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID);
+    var myWards = OVERVIEW.wards ? OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID) : [];
     el.innerHTML = myWards.map(w => 
       buildCard(w, OVERVIEW.votesByWard, 'Ward', `drillDown('centre', '${w.id}', '${w.name}')`)
     ).join('');
@@ -1339,7 +1359,7 @@ function renderDrillGrid() {
   }
 
   if (DRILL_LEVEL === 'centre') {
-    var myCentres = OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD);
+    var myCentres = OVERVIEW.centres ? OVERVIEW.centres.filter(c => c.ward_id === DRILL_WARD) : [];
     el.innerHTML = myCentres.map(c => 
       buildCard(c, OVERVIEW.votesByCentre, 'Polling Centre', `drillDown('stream', '${c.id}', '${c.name}')`)
     ).join('');
@@ -1347,7 +1367,7 @@ function renderDrillGrid() {
   }
 
   if (DRILL_LEVEL === 'stream') {
-    var myStreams = OVERVIEW.streams.filter(s => s.centre_id === DRILL_CENTRE);
+    var myStreams = OVERVIEW.streams ? OVERVIEW.streams.filter(s => s.centre_id === DRILL_CENTRE) : [];
     el.innerHTML = myStreams.map(s => {
       var streamLabel = 'STR ' + String(s.stream_number).padStart(2, '0');
       return buildCard({ code: s.code, name: streamLabel }, OVERVIEW.votesByStream, s.code, `openStreamDetail('${s.code}')`);
