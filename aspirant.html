@@ -758,14 +758,29 @@ async function init() {
   loadOverview();
   startAutoRefresh();
 }
-  function switchAspCounty(countyId) {
+function switchAspCounty(countyId) {
   CURRENT_COUNTY = countyId;
-  // Reset to top level
-  DRILL_LEVEL = 'county';
-  DRILL_COUNTY_ID = ''; DRILL_COUNTY_NAME = '';
+  
+  if (!countyId) {
+    // If they select "All Counties" (if you have that option), reset to national
+    DRILL_LEVEL = 'county';
+    DRILL_COUNTY_ID = '';
+    DRILL_COUNTY_NAME = '';
+  } else {
+    // JUMP straight into the selected county
+    DRILL_LEVEL = 'constituency';
+    DRILL_COUNTY_ID = countyId;
+    
+    // Find the county name for the breadcrumb
+    var countyObj = OVERVIEW && OVERVIEW.counties ? OVERVIEW.counties.find(c => c.id === countyId) : null;
+    DRILL_COUNTY_NAME = countyObj ? countyObj.name : 'County';
+  }
+
+  // Reset all deeper levels
   DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
   DRILL_WARD = ''; DRILL_WARD_NAME = '';
   DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+  
   loadOverview();
 }
 function startAutoRefresh() {
@@ -977,19 +992,32 @@ async function loadTracker(silent) {
 
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
-    else if (activeCounty) constQuery = constQuery.eq('county_id', activeCounty);
+    else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
     const { data: constsData } = await constQuery;
 
     let wardQuery = db.from('wards').select('*');
     if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
+    else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
     else wardQuery = wardQuery.in('constituency_id', (constsData || []).map(c => c.id));
     const { data: wardsData } = await wardQuery;
 
     filterWardIds = (wardsData || []).map(w => w.id);
 
+    // FIX: Prevent massive URL crashes for National Scope
+    // If National, we don't filter by 1450 wards. We just fetch the latest 1000 streams so it doesn't hang.
+    var centreQuery = db.from('centres').select('*');
+    var streamQuery = db.from('streams').select('*');
+    
+    if (SCOPE_MODE !== 'national') {
+        centreQuery = centreQuery.in('ward_id', filterWardIds);
+        streamQuery = streamQuery.in('ward_id', filterWardIds);
+    } else {
+        // National Tracker Demo Limit (prevents infinite spin)
+        streamQuery = streamQuery.limit(1000); 
+    }
+
     const [ { data: centresData }, { data: streamsData } ] = await Promise.all([
-        db.from('centres').select('*').in('ward_id', filterWardIds),
-        db.from('streams').select('*').in('ward_id', filterWardIds)
+        centreQuery, streamQuery
     ]);
 
     var streamCodes = (streamsData || []).map(s => s.code);
