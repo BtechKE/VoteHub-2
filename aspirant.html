@@ -585,14 +585,14 @@
   </div>
 
   <!-- LEADERBOARD -->
-  <div class="section-head">
+  <!-- LEADERBOARD -->
+  <div class="section-head" id="boardSectionHead">
     <div>
       <div class="section-title"><i class="fas fa-ranking-star"></i> Full Race</div>
       <div class="section-sub" id="boardSub">All candidates ranked</div>
     </div>
     <div class="section-count" id="boardCount"></div>
   </div>
-
   <div class="board" id="board"></div>
   </div><!-- /resultsView -->
 
@@ -736,21 +736,22 @@ async function init() {
   document.getElementById('topName').textContent = USER.name || 'Viewer';
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
-  // --- PREMIUM SCOPE BADGE & DRILL LEVEL ---
-    if (USER.isSpectator || USER.position === 'President') {
+ if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
-    DRILL_LEVEL = 'county';      // <--- MUST BE 'county'
-    TRACKER_LEVEL = 'constituency'; 
+    DRILL_LEVEL = 'county';
+    TRACKER_LEVEL = 'constituency';
     document.getElementById('nationalScopeWrap').style.display = 'flex';
-    // ...
-    
+
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
-      CURRENT_COUNTY = counties[0].id;
-      document.getElementById('aspCountySelector').innerHTML = counties.map(c => `<option value="${c.id}">${esc(c.name)} County</option>`).join('');
-      document.getElementById('aspCountySelector').value = CURRENT_COUNTY;
+      CURRENT_COUNTY = '';                       // was: counties[0].id
+      document.getElementById('aspCountySelector').innerHTML =
+        '<option value="">All Counties</option>' +                       // NEW
+        counties.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+      document.getElementById('aspCountySelector').value = '';           // NEW
     }
-  } else {
+  }
+    else {
     let scopeName = 'Scope';
     if (USER.position === 'MCA') {
       SCOPE_MODE = 'ward'; 
@@ -780,6 +781,8 @@ async function init() {
   loadOverview();
   startAutoRefresh();
 }
+
+  
 function switchAspCounty(countyId) {
   CURRENT_COUNTY = countyId;
   
@@ -799,7 +802,7 @@ function switchAspCounty(countyId) {
   DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
   DRILL_WARD = ''; DRILL_WARD_NAME = '';
   DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
-  
+  TRACKER_DATA = null; 
   loadOverview();
 }
 function startAutoRefresh() {
@@ -855,7 +858,7 @@ async function loadOverview(silent) {
 
     // FIX: Prevent massive national query, fetch only the current county if selected
     let streamQuery = db.from('streams').select('*');
-    if (DRILL_LEVEL === 'constituency' && DRILL_COUNTY_ID) {
+if (SCOPE_MODE === 'national' && DRILL_COUNTY_ID) {
         const countyConstIds = (consts || []).filter(c => c.county_id === DRILL_COUNTY_ID).map(c => c.id);
         const countyWardIds = (wardsData || []).filter(w => countyConstIds.includes(w.constituency_id)).map(w => w.id);
         const countyCentreIds = (centresData || []).filter(c => countyWardIds.includes(c.ward_id)).map(c => c.id);
@@ -1162,9 +1165,11 @@ function switchPosition(pos) {
   DRILL_DATA = null;
   
   // Reset to base level for this scope
-  if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') DRILL_LEVEL = 'constituency';
-  else if (SCOPE_MODE === 'constituency') DRILL_LEVEL = 'ward';
-  else if (SCOPE_MODE === 'ward') DRILL_LEVEL = 'centre';
+    if (SCOPE_MODE === 'national') {
+    DRILL_LEVEL = DRILL_COUNTY_ID ? 'constituency' : 'county';   // was always 'constituency'
+  } else if (SCOPE_MODE === 'county')        DRILL_LEVEL = 'constituency';
+  else if (SCOPE_MODE === 'constituency')    DRILL_LEVEL = 'ward';
+  else if (SCOPE_MODE === 'ward')            DRILL_LEVEL = 'centre';
 
   renderTabs();
   document.getElementById('heroCard').innerHTML = '<div class="hero-inner"><div class="load" style="color:#F0F0F0;"><i class="fas fa-spinner" style="color:#A5CF83;"></i>Loading…</div></div>';
@@ -1439,11 +1444,30 @@ function renderDrillGrid() {
   }
 }
 function drillDown(level, id, name) {
-  if (level === 'constituency') { DRILL_COUNTY_ID = id; DRILL_COUNTY_NAME = name; DRILL_LEVEL = 'constituency'; }
-  if (level === 'ward') { DRILL_CONST_ID = id; DRILL_CONST_NAME = name; DRILL_LEVEL = 'ward'; }
-  if (level === 'centre') { DRILL_WARD = id; DRILL_WARD_NAME = name; DRILL_LEVEL = 'centre'; }
-  if (level === 'stream') { DRILL_CENTRE = id; DRILL_CENTRE_NAME = name; DRILL_LEVEL = 'stream'; }
-  
+  if (level === 'constituency') {
+    DRILL_COUNTY_ID = id; DRILL_COUNTY_NAME = name; DRILL_LEVEL = 'constituency';
+    DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
+    DRILL_WARD = '';     DRILL_WARD_NAME  = '';
+    DRILL_CENTRE = '';   DRILL_CENTRE_NAME = '';
+    // Keep the top-bar dropdown in sync
+    if (SCOPE_MODE === 'national') {
+      CURRENT_COUNTY = id;
+      const sel = document.getElementById('aspCountySelector');
+      if (sel) sel.value = id;
+    }
+  }
+  if (level === 'ward') {
+    DRILL_CONST_ID = id; DRILL_CONST_NAME = name; DRILL_LEVEL = 'ward';
+    DRILL_WARD = '';   DRILL_WARD_NAME  = '';
+    DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+  }
+  if (level === 'centre') {
+    DRILL_WARD = id; DRILL_WARD_NAME = name; DRILL_LEVEL = 'centre';
+    DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+  }
+  if (level === 'stream') {
+    DRILL_CENTRE = id; DRILL_CENTRE_NAME = name; DRILL_LEVEL = 'stream';
+  }
   renderDrillGrid(); renderBoard(); renderBreadcrumb();
   window.scrollTo({ top: document.getElementById('drillGrid').offsetTop - 100, behavior: 'smooth' });
 }
@@ -1526,65 +1550,138 @@ function getScopedLeaderboard() {
   return null;
 }
 
+// Is there an actual "race" to render at the current drill scope for this position?
+function isRaceScopeActive() {
+  if (SCOPE_MODE !== 'national') return true;           // county/constituency/ward aspirants unaffected
+  const pos = OVERVIEW ? OVERVIEW.viewingPosition : VIEW_POS;
+  if (pos === 'President') return true;                 // national race — always valid
+  if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') return !!DRILL_COUNTY_ID;
+  if (pos === 'MP')  return !!DRILL_CONST_ID;
+  if (pos === 'MCA') return !!DRILL_WARD;
+  return false;
+}
+
+// Candidate pool scoped to the position's actual race geography
+function getRaceCandidates() {
+  if (!OVERVIEW) return [];
+  const pool = OVERVIEW.leaderboard || [];
+  if (SCOPE_MODE !== 'national') return pool;           // already scoped in loadOverview
+
+  const pos = OVERVIEW.viewingPosition;
+  if (pos === 'President') return pool;
+
+  if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
+    if (!DRILL_COUNTY_ID) return [];
+    return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].county_id === DRILL_COUNTY_ID);
+  }
+  if (pos === 'MP') {
+    if (!DRILL_CONST_ID) return [];
+    return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].constituency_id === DRILL_CONST_ID);
+  }
+  if (pos === 'MCA') {
+    if (!DRILL_WARD) return [];
+    return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].ward_id === DRILL_WARD);
+  }
+  return pool;
+}
+
+// Votes map for the current drill level (returns {} if none available)
+function getVotesForCurrentDrill() {
+  if (DRILL_LEVEL === 'stream' && DRILL_CENTRE)   return OVERVIEW.votesByStream[DRILL_CENTRE] || {};
+  if (DRILL_LEVEL === 'centre' && DRILL_WARD)     return OVERVIEW.votesByWard[DRILL_WARD]     || {};
+  if (DRILL_LEVEL === 'ward' && DRILL_CONST_ID)   return OVERVIEW.votesByConst[DRILL_CONST_ID] || {};
+  if (DRILL_LEVEL === 'constituency' && SCOPE_MODE === 'national' && DRILL_COUNTY_ID)
+                                                  return OVERVIEW.votesByCounty[DRILL_COUNTY_ID] || {};
+  // fallback — global totals (correct for President at 'county' level,
+  // and for non-national scope at its root level)
+  const totals = {};
+  (OVERVIEW.leaderboard || []).forEach(c => totals[c.code] = c.votes);
+  return totals;
+}
+  
 function renderBoard() {
   if (!OVERVIEW) return;
-  var el = document.getElementById('board');
-  var scopedCandidates = [];
+  const el   = document.getElementById('board');
+  const head = document.getElementById('boardSectionHead');
 
-  // Figure out which candidates to show based on the Drill Level
-  if (DRILL_LEVEL === 'county') {
-    scopedCandidates = OVERVIEW.leaderboard; // <--- ADD THIS
-  } else if (DRILL_LEVEL === 'constituency') {
-    if (SCOPE_MODE === 'national') {
-        // President viewing a specific county
-        var votes = OVERVIEW.votesByCounty[DRILL_COUNTY_ID] || {};
-        scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
-    } else {
-        scopedCandidates = OVERVIEW.leaderboard;
-    }
-  } else if (DRILL_LEVEL === 'ward') {
-    var votes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {};
-    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
-  } else if (DRILL_LEVEL === 'centre') {
-    var votes = OVERVIEW.votesByWard[DRILL_WARD] || {};
-    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
-  } else if (DRILL_LEVEL === 'stream') {
-    var votes = OVERVIEW.votesByCentre[DRILL_CENTRE] || {};
-    scopedCandidates = OVERVIEW.leaderboard.map(c => ({ ...c, votes: votes[c.code] || 0 })).sort((a,b)=>b.votes-a.votes);
+  // --- 1. Hide entirely if there's no valid race at this drill level ---
+  if (!isRaceScopeActive()) {
+    if (el)   el.style.display   = 'none';
+    if (head) head.style.display = 'none';
+    return;
   }
-  var total = scopedCandidates.reduce((s,c)=>s+c.votes, 0);
-  if (!scopedCandidates.length) { el.innerHTML = '<div class="empty">No candidates.</div>'; return; }
+  if (el)   el.style.display   = '';
+  if (head) head.style.display = '';
 
-  el.innerHTML = scopedCandidates.map((c, idx) => {
-    var pct = total > 0 ? (c.votes/total*100) : 0;
-    var isYou = isOwnCandidate(c.name);
-    return `<div class="board-row ${idx===0?'leader':''} ${isYou?'you':''}" onclick="openCandidateDetail('${c.code}')">
-      <div class="avatar-wrap ${c.photo_url ? '' : 'no-photo'}">
-        ${c.photo_url ? `<img src="${c.photo_url}">` : c.name.charAt(0)}
-        <span class="avatar-rank">${idx+1}</span>
-      </div>
-      <div class="board-info">
-        <div class="board-name">${esc(c.name)} ${isYou ? '<span class="board-you-pill">You</span>' : ''}</div>
-        <div class="board-party">${esc(c.party)}</div>
-      </div>
-      <div style="text-align:right;">
-        <div class="board-votes">${c.votes.toLocaleString()}</div>
-        <div class="board-pct">${pct.toFixed(1)}%</div>
-      </div>
-    </div>`;
+  // --- 2. Build scoped candidate list ---
+  const racePool = getRaceCandidates();
+  if (!racePool.length) {
+    el.innerHTML = '<div class="empty">No candidates configured for this race.</div>';
+    return;
+  }
+
+  const votesMap = getVotesForCurrentDrill();
+  const scoped = racePool
+    .map(c => ({ ...c, votes: votesMap[c.code] || 0 }))
+    .sort((a, b) => b.votes - a.votes);
+
+  const total = scoped.reduce((s, c) => s + c.votes, 0);
+
+  // --- 3. Update the sub-heading text to reflect the scope ---
+  const subEl = document.getElementById('boardSub');
+  const pos = OVERVIEW.viewingPosition;
+  if (subEl) {
+    if (pos === 'President') subEl.textContent = 'All candidates ranked (national race)';
+    else if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep')
+      subEl.textContent = 'Candidates ranked in ' + (DRILL_COUNTY_NAME || 'this county');
+    else if (pos === 'MP')
+      subEl.textContent = 'Candidates ranked in ' + (DRILL_CONST_NAME || 'this constituency');
+    else if (pos === 'MCA')
+      subEl.textContent = 'Candidates ranked in ' + (DRILL_WARD_NAME || 'this ward');
+  }
+
+  // --- 4. Render ---
+  el.innerHTML = scoped.map((c, idx) => {
+    const pct    = total > 0 ? (c.votes / total * 100) : 0;
+    const isYou  = isOwnCandidate(c.name);
+    return `
+      <div class="board-row ${idx === 0 ? 'leader' : ''} ${isYou ? 'you' : ''}"
+           onclick="openCandidateDetail('${c.code}')">
+        <div class="avatar-wrap ${c.photo_url ? '' : 'no-photo'}">
+          ${c.photo_url ? `<img src="${c.photo_url}">` : c.name.charAt(0)}
+          <span class="avatar-rank">${idx + 1}</span>
+        </div>
+        <div class="board-info">
+          <div class="board-name">${esc(c.name)} ${isYou ? '<span class="board-you-pill">You</span>' : ''}</div>
+          <div class="board-party">${esc(c.party)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="board-votes">${c.votes.toLocaleString()}</div>
+          <div class="board-pct">${pct.toFixed(1)}%</div>
+        </div>
+      </div>`;
   }).join('');
 }
 
 function resetDrill() {
   DRILL_COUNTY_ID = ''; DRILL_COUNTY_NAME = '';
-  DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
-  DRILL_WARD = ''; DRILL_WARD_NAME = '';
-  DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+  DRILL_CONST_ID  = ''; DRILL_CONST_NAME  = '';
+  DRILL_WARD      = ''; DRILL_WARD_NAME   = '';
+  DRILL_CENTRE    = ''; DRILL_CENTRE_NAME = '';
 
-  if (SCOPE_MODE === 'national') DRILL_LEVEL = 'county';
-  else if (SCOPE_MODE === 'county') DRILL_LEVEL = 'constituency';
+  if (SCOPE_MODE === 'national') {
+    DRILL_LEVEL = 'county';
+    CURRENT_COUNTY = '';                                    // NEW
+    const sel = document.getElementById('aspCountySelector');
+    if (sel) sel.value = '';                                // NEW
+    TRACKER_DATA = null;                                    // NEW
+    loadOverview();                                         // refetch national
+    return;
+  }
+
+  if (SCOPE_MODE === 'county')        DRILL_LEVEL = 'constituency';
   else if (SCOPE_MODE === 'constituency') DRILL_LEVEL = 'ward';
-  else if (SCOPE_MODE === 'ward') DRILL_LEVEL = 'centre';
+  else if (SCOPE_MODE === 'ward')     DRILL_LEVEL = 'centre';
 
   renderDrillGrid(); renderBoard(); renderBreadcrumb();
 }
@@ -1999,9 +2096,15 @@ function openCandidateDetail(code) {
     });
     pool = Object.keys(centreCandidates).map(function (k) { return centreCandidates[k]; }); pool.sort(function (a, b) { return b.votes - a.votes; }); totalVotes = pool.reduce(function (s, c) { return s + c.votes; }, 0); subtitleContext = DRILL_CENTRE_NAME + ' · MCA';
   } else if (isMCA && DRILL_WARD) {
-    var ward = (OVERVIEW.wards || []).filter(function (w) { return w.wardId === DRILL_WARD; })[0];
-    if (ward) { pool = ward.candidates || []; totalVotes = ward.totalVotes || 0; subtitleContext = ward.wardName + ' · MCA'; }
-  }
+    // Filter the national leaderboard down to just this ward's MCAs
+    pool = (OVERVIEW.leaderboard || []).filter(function (c) {
+      var info = OVERVIEW.candMap[c.code];
+      return info && info.ward_id === DRILL_WARD;
+    });
+    totalVotes = pool.reduce(function (s, c) { return s + c.votes; }, 0);
+    var wObj = (OVERVIEW.wards || []).find(function (w) { return w.id === DRILL_WARD; });
+    subtitleContext = (wObj ? wObj.name : 'Ward') + ' · MCA';
+}
 
   if (!pool) { pool = OVERVIEW.leaderboard || []; totalVotes = OVERVIEW.globalTotal || 0; subtitleContext = OVERVIEW.viewingPosition; }
   var me = pool.filter(function (c) { return c.code === code; })[0]; if (!me) return;
