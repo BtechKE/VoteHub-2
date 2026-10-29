@@ -784,21 +784,18 @@ function switchAspCounty(countyId) {
   CURRENT_COUNTY = countyId;
   
   if (!countyId) {
-    // If they select "All Counties" (if you have that option), reset to national
     DRILL_LEVEL = 'county';
     DRILL_COUNTY_ID = '';
     DRILL_COUNTY_NAME = '';
   } else {
-    // JUMP straight into the selected county
+    // Jump straight into the selected county!
     DRILL_LEVEL = 'constituency';
     DRILL_COUNTY_ID = countyId;
     
-    // Find the county name for the breadcrumb
     var countyObj = OVERVIEW && OVERVIEW.counties ? OVERVIEW.counties.find(c => c.id === countyId) : null;
     DRILL_COUNTY_NAME = countyObj ? countyObj.name : 'County';
   }
 
-  // Reset all deeper levels
   DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
   DRILL_WARD = ''; DRILL_WARD_NAME = '';
   DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
@@ -838,7 +835,7 @@ function manualRefresh() {
 async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
-    // 1. Fetch Geography (Optimized for National Scope)
+    // 1. Fetch Geography
     let constQuery = db.from('constituencies').select('*');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
@@ -856,33 +853,34 @@ async function loadOverview(silent) {
     }
     const { data: centresData } = await centreQuery;
 
+    // FIX: Prevent massive national query, fetch only the current county if selected
     let streamQuery = db.from('streams').select('*');
-    if (SCOPE_MODE !== 'national') {
+    if (DRILL_LEVEL === 'constituency' && DRILL_COUNTY_ID) {
+        const countyConstIds = (consts || []).filter(c => c.county_id === DRILL_COUNTY_ID).map(c => c.id);
+        const countyWardIds = (wardsData || []).filter(w => countyConstIds.includes(w.constituency_id)).map(w => w.id);
+        const countyCentreIds = (centresData || []).filter(c => countyWardIds.includes(c.ward_id)).map(c => c.id);
+        streamQuery = streamQuery.in('centre_id', countyCentreIds);
+    } else if (SCOPE_MODE !== 'national') {
         streamQuery = streamQuery.in('centre_id', (centresData||[]).map(c=>c.id));
     }
     const { data: streamsData } = await streamQuery;
 
-    // 2. Fetch Candidates
+    // 2. Fetch Candidates & Results
     let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
     if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
         candQuery = candQuery.eq('county_id', USER.county);
     }
     const { data: cands } = await candQuery;
 
-    // 3. Fetch Results (FOR ALL POSITIONS TO CALCULATE TAB TOTALS)
     const activeStreamCodes = (streamsData || []).map(s => s.code);
     let allResultsQuery = db.from('results').select('stream_code, position, candidate_code, votes');
-    
-    // Only filter by streams if we are not at the National level (prevents URL crash)
-    if (activeStreamCodes.length > 0 && SCOPE_MODE !== 'national') {
+    if (activeStreamCodes.length > 0) {
         allResultsQuery = allResultsQuery.in('stream_code', activeStreamCodes);
     }
     const { data: allResultsData } = await allResultsQuery;
-
-    // Filter results for the currently selected tab (e.g., President)
     const resultsData = (allResultsData || []).filter(r => r.position === VIEW_POS);
 
-    // 4. Build Lookup Maps
+    // 3. Build Lookup Maps
     const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
     const streamMap = {}; (streamsData || []).forEach(s => streamMap[s.code] = s);
     const centreMap = {}; (centresData || []).forEach(c => centreMap[c.id] = c);
@@ -895,23 +893,15 @@ async function loadOverview(silent) {
       countiesData = cData || [];
     }
     
-    // 5. Aggregate Votes for the Active Tab
-    const votesByCounty = {};
-    const votesByConst = {};
-    const votesByWard = {};
-    const votesByCentre = {};
-    const votesByStream = {}; 
-    const totalByCand = {};
+    // 4. Aggregate Votes
+    const votesByCounty = {}, votesByConst = {}, votesByWard = {}, votesByCentre = {}, votesByStream = {}, totalByCand = {};
+    const tabTotals = {}; POSITIONS.forEach(p => tabTotals[p] = 0);
 
     (resultsData || []).forEach(r => {
-      const stream = streamMap[r.stream_code];
-      if (!stream) return; 
-      const centre = centreMap[stream.centre_id];
-      if (!centre) return;
-      const ward = wardMap[centre.ward_id];
-      if (!ward) return;
-      const constituency = constMap[ward.constituency_id];
-      if (!constituency) return;
+      const stream = streamMap[r.stream_code]; if (!stream) return; 
+      const centre = centreMap[stream.centre_id]; if (!centre) return;
+      const ward = wardMap[centre.ward_id]; if (!ward) return;
+      const constituency = constMap[ward.constituency_id]; if (!constituency) return;
       const countyId = constituency.county_id;
 
       if (!totalByCand[r.candidate_code]) totalByCand[r.candidate_code] = 0;
@@ -919,30 +909,19 @@ async function loadOverview(silent) {
 
       if (!votesByStream[r.stream_code]) votesByStream[r.stream_code] = {};
       votesByStream[r.stream_code][r.candidate_code] = (votesByStream[r.stream_code][r.candidate_code]||0) + r.votes;
-
       if (!votesByCentre[centre.id]) votesByCentre[centre.id] = {};
       votesByCentre[centre.id][r.candidate_code] = (votesByCentre[centre.id][r.candidate_code]||0) + r.votes;
-
       if (!votesByWard[ward.id]) votesByWard[ward.id] = {};
       votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
-
       if (!votesByConst[constituency.id]) votesByConst[constituency.id] = {};
       votesByConst[constituency.id][r.candidate_code] = (votesByConst[constituency.id][r.candidate_code]||0) + r.votes;
-
       if (!votesByCounty[countyId]) votesByCounty[countyId] = {};
       votesByCounty[countyId][r.candidate_code] = (votesByCounty[countyId][r.candidate_code]||0) + r.votes;
     });
 
-    // 6. Calculate Tab Totals (For the pills on the tabs)
-    const tabTotals = {};
-    POSITIONS.forEach(p => tabTotals[p] = 0);
-    (allResultsData || []).forEach(r => {
-        if (tabTotals[r.position] !== undefined) {
-            tabTotals[r.position] += r.votes;
-        }
-    });
+    (allResultsData || []).forEach(r => { if (tabTotals[r.position] !== undefined) tabTotals[r.position] += r.votes; });
 
-    // 7. Format Global Leaderboard
+    // 5. Leaderboard
     let leaderboard = (cands || []).map(c => ({
       code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
@@ -956,22 +935,18 @@ async function loadOverview(silent) {
         if (idx !== -1) { ownRow = leaderboard[idx]; ownRank = idx + 1; }
     }
 
-    // 8. Save to OVERVIEW
     OVERVIEW = {
       viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
       leader: leaderboard[0], runner: leaderboard[1], 
       margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
       counties: countiesData, consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
-      votesByCounty, votesByConst, votesByWard, votesByCentre, votesByStream, candMap,
-      tabTotals: tabTotals, // <--- Now passed to the UI!
+      votesByCounty, votesByConst, votesByWard, votesByCentre, votesByStream, candMap, tabTotals,
       reported: (resultsData || []).length, totalStreams: (streamsData || []).length
     };
 
     renderTabs(); renderHero(); renderDrillGrid(); renderBoard();
     setPulse('live');
-  } catch (err) {
-    console.error(err); setPulse('stale'); if (!silent) toast('Connection error.', 'error');
-  }
+  } catch (err) { console.error(err); setPulse('stale'); if (!silent) toast('Connection error.', 'error'); }
 }
 
 async function loadDrill(silent) {
@@ -1202,6 +1177,17 @@ function renderHero() {
   var el = document.getElementById('heroCard'); 
   var liveText = timeAgo(lastRefreshAt);
 
+  // ================================================================
+  // FIX: If looking at the National Grid (47 counties) but NOT on President
+  // Show a summary card instead of a single leading candidate
+  // ================================================================
+  if (DRILL_LEVEL === 'county' && OVERVIEW.viewingPosition !== 'President') {
+    var activeCounties = Object.keys(OVERVIEW.votesByCounty || {}).length;
+    el.className = 'hero other';
+    el.innerHTML = '<div class="hero-inner"><div class="hero-top"><span class="hero-live"><span class="dot"></span>Live · ' + esc(liveText) + '</span></div><div class="hero-eyebrow">' + esc(OVERVIEW.viewingPosition) + ' · National Overview</div><div class="hero-name">' + activeCounties + ' Counties Reporting</div><div class="hero-meta">Select a specific county from the dropdown above to view the ' + esc(OVERVIEW.viewingPosition) + ' race</div></div>';
+    return;
+  }
+
   // --- 1. HANDLE MCA (Ward Scope) ---
   if (OVERVIEW.viewingPosition === 'MCA') {
     var isDrilledToWard = (DRILL_LEVEL === 'centre' || DRILL_LEVEL === 'stream');
@@ -1292,7 +1278,7 @@ function renderHero() {
                   scopedVotes[c] = (scopedVotes[c]||0) + OVERVIEW.votesByConst[k][c]; 
               } 
           }); 
-          scopeLabel = 'Overall County'; // <--- FIXED HERE
+          scopeLabel = 'Overall County'; 
       }
   }
   else if (DRILL_LEVEL === 'ward') { 
