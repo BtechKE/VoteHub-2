@@ -4095,8 +4095,8 @@ function openAspirantModal() {
 function aspPosChanged() { 
   var pos = document.getElementById('m_aspPosition').value;
   
-  // President, Governor, Senator, and Women Rep are County-wide
-  var isCounty = (pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
+  // Governor, Senator, and Women Rep are County-wide. (President is National).
+  var isCounty = (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep');
   
   // MP is Constituency-wide
   var isConst = (pos === 'MP');
@@ -4108,20 +4108,20 @@ function aspPosChanged() {
   document.getElementById('m_aspConstWrap').style.display = isConst ? 'block' : 'none';
   document.getElementById('m_aspWardWrap').style.display = isWard ? 'block' : 'none';
 }
-
 async function saveAspirant(id) {
   var name = document.getElementById('m_aspName').value.trim();
   var pos = document.getElementById('m_aspPosition').value;
   var login = document.getElementById('m_aspLogin').value.trim().toUpperCase();
   var maxDev = parseInt(document.getElementById('m_aspMaxDevices').value) || 3;
-// Add max_devices: maxDev to your payload/rpc call
+  
   var county = document.getElementById('m_aspCounty') ? document.getElementById('m_aspCounty').value : null;
   var constId = document.getElementById('m_aspConst') ? document.getElementById('m_aspConst').value : null;
   var ward = document.getElementById('m_aspWard') ? document.getElementById('m_aspWard').value : null;
 
   if (!name || !login) return toast('Name and login code are required.', 'error');
   
-  if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
+  // FIX: Removed 'President' from the county requirement
+  if ((pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
     return toast('Please select a County for this position.', 'error');
   }
   if (pos === 'MP' && !constId) {
@@ -4134,14 +4134,15 @@ async function saveAspirant(id) {
   if (id) {
     // --- EDITING EXISTING ASPIRANT ---
     try {
-          const { data, error } = await db.from('aspirants').update({ 
+      const { data, error } = await db.from('aspirants').update({ 
         name: name, 
         position: pos, 
-        county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+        // FIX: Added pos !== 'President' so it saves NULL
+        county_id: (pos !== 'MCA' && pos !== 'MP' && pos !== 'President') ? county : null,
         constituency_id: (pos === 'MP') ? constId : null,
         ward_id: (pos === 'MCA') ? ward : null,
         login_code: login,
-        max_devices: maxDev // <--- ADD THIS
+        max_devices: maxDev 
       }).eq('id', id).select();
 
       if (error) throw error;
@@ -4160,16 +4161,17 @@ async function saveAspirant(id) {
     
     if (!email || !pw) return toast('Email and password are required.', 'error');
 
-      const { data, error } = await db.rpc('admin_create_aspirant', { 
+    const { data, error } = await db.rpc('admin_create_aspirant', { 
       p_email: email, 
       p_password: pw, 
       p_name: name, 
       p_position: pos, 
-      p_county_id: (pos !== 'MCA' && pos !== 'MP') ? county : null,
+      // FIX: Added pos !== 'President' so it saves NULL
+      p_county_id: (pos !== 'MCA' && pos !== 'MP' && pos !== 'President') ? county : null,
       p_constituency_id: (pos === 'MP') ? constId : null,
       p_ward: (pos === 'MCA') ? ward : null,
       p_login: login,
-      p_max_devices: maxDev // <--- ADD THIS (You will need to update your SQL RPC function to accept this)
+      p_max_devices: maxDev 
     });
     
     if (error || !data.success) return toast(error?.message || 'Failed to create aspirant.', 'error');
