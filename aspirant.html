@@ -434,7 +434,7 @@
 }
     /* ... your other CSS ... */
 
-/* 👇 PASTE THE CUSTOM SELECT CSS HERE 👇 */
+
 .custom-select-modal {
   position: fixed; inset: 0; background: rgba(27, 33, 26, 0.6);
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
@@ -485,6 +485,28 @@
   width: 100%; padding: 16px; border-radius: 14px;
   background: rgba(196, 69, 58, 0.08); color: var(--danger);
   font-size: 15px; font-weight: 800; border: none; cursor: pointer;
+}
+/* ================================================================
+   LARGE SCREEN TAB LAYOUT (Tablets & Desktops)
+================================================================ */
+@media (min-width: 768px) {
+  /* Push Results to far left, Live Tracker to far right */
+  .viewtabs {
+    justify-content: space-between;
+  }
+
+  /* Distribute the 6 Position tabs evenly across the screen */
+  .postabs {
+    display: grid !important;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    overflow-x: visible !important;
+  }
+
+  .postab {
+    justify-content: center;
+    width: 100%;
+  }
 }
 </style>
   </style>
@@ -828,14 +850,12 @@ async function loadOverview(silent) {
     else if (SCOPE_MODE !== 'national') wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
     const { data: wardsData } = await wardQuery;
 
-    // FIX: If National, don't pass a massive list of IDs. Just fetch all.
     let centreQuery = db.from('centres').select('*');
     if (SCOPE_MODE !== 'national') {
         centreQuery = centreQuery.in('ward_id', (wardsData||[]).map(w=>w.id));
     }
     const { data: centresData } = await centreQuery;
 
-    // FIX: Same here. If National, fetch all streams.
     let streamQuery = db.from('streams').select('*');
     if (SCOPE_MODE !== 'national') {
         streamQuery = streamQuery.in('centre_id', (centresData||[]).map(c=>c.id));
@@ -849,8 +869,18 @@ async function loadOverview(silent) {
     }
     const { data: cands } = await candQuery;
 
-    // 3. Fetch Results
-    const { data: resultsData } = await db.from('results').select('stream_code, candidate_code, votes').eq('position', VIEW_POS);
+    // 3. Fetch Results (FOR ALL POSITIONS TO CALCULATE TAB TOTALS)
+    const activeStreamCodes = (streamsData || []).map(s => s.code);
+    let allResultsQuery = db.from('results').select('stream_code, position, candidate_code, votes');
+    
+    // Only filter by streams if we are not at the National level (prevents URL crash)
+    if (activeStreamCodes.length > 0 && SCOPE_MODE !== 'national') {
+        allResultsQuery = allResultsQuery.in('stream_code', activeStreamCodes);
+    }
+    const { data: allResultsData } = await allResultsQuery;
+
+    // Filter results for the currently selected tab (e.g., President)
+    const resultsData = (allResultsData || []).filter(r => r.position === VIEW_POS);
 
     // 4. Build Lookup Maps
     const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
@@ -859,14 +889,13 @@ async function loadOverview(silent) {
     const wardMap = {}; (wardsData || []).forEach(w => wardMap[w.id] = w);
     const constMap = {}; (consts || []).forEach(c => constMap[c.id] = c);
 
-    // Fetch all counties for the national scope (President/Spectator)
     let countiesData = [];
     if (SCOPE_MODE === 'national') {
       const { data: cData } = await db.from('counties').select('*').order('name');
       countiesData = cData || [];
     }
     
-    // 5. Aggregate Votes
+    // 5. Aggregate Votes for the Active Tab
     const votesByCounty = {};
     const votesByConst = {};
     const votesByWard = {};
@@ -904,7 +933,16 @@ async function loadOverview(silent) {
       votesByCounty[countyId][r.candidate_code] = (votesByCounty[countyId][r.candidate_code]||0) + r.votes;
     });
 
-    // 6. Format Global Leaderboard
+    // 6. Calculate Tab Totals (For the pills on the tabs)
+    const tabTotals = {};
+    POSITIONS.forEach(p => tabTotals[p] = 0);
+    (allResultsData || []).forEach(r => {
+        if (tabTotals[r.position] !== undefined) {
+            tabTotals[r.position] += r.votes;
+        }
+    });
+
+    // 7. Format Global Leaderboard
     let leaderboard = (cands || []).map(c => ({
       code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
@@ -918,12 +956,14 @@ async function loadOverview(silent) {
         if (idx !== -1) { ownRow = leaderboard[idx]; ownRank = idx + 1; }
     }
 
+    // 8. Save to OVERVIEW
     OVERVIEW = {
       viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
       leader: leaderboard[0], runner: leaderboard[1], 
       margin: leaderboard[0] && leaderboard[1] ? (leaderboard[0].votes - leaderboard[1].votes) : 0,
       counties: countiesData, consts: consts || [], wards: wardsData || [], centres: centresData || [], streams: streamsData || [],
       votesByCounty, votesByConst, votesByWard, votesByCentre, votesByStream, candMap,
+      tabTotals: tabTotals, // <--- Now passed to the UI!
       reported: (resultsData || []).length, totalStreams: (streamsData || []).length
     };
 
@@ -1113,7 +1153,7 @@ function renderTabs() {
   var el = document.getElementById('posTabs'); if (!OVERVIEW) return;
   var ownPos = (!USER.isSpectator && USER.position) ? USER.position : '';
   
-  // FIX: Calculate contested wards using the new data structure
+  // Calculate contested wards for MCA
   var mcaContested = 0;
   if (OVERVIEW.votesByWard) {
     var wIdsWithVotes = Object.keys(OVERVIEW.votesByWard);
@@ -1122,7 +1162,18 @@ function renderTabs() {
 
   el.innerHTML = POSITIONS.map(function (p) {
     var cls = 'postab' + (p === VIEW_POS ? ' active' : '') + (p === ownPos ? ' mine' : '');
-    var pillText = (p === 'MCA') ? mcaContested + ' wards' : ((OVERVIEW.tabTotals && OVERVIEW.tabTotals[p]) || 0).toLocaleString();
+    
+    // UX: Show "votes" for major positions, but "wards" for MCA
+    var pillText = '';
+    if (p === 'MCA') {
+        pillText = mcaContested + ' wards';
+    } else {
+        var total = (OVERVIEW.tabTotals && OVERVIEW.tabTotals[p]) || 0;
+        // Format large numbers nicely (e.g., 1.3K instead of 1303)
+        var formattedTotal = total >= 1000 ? (total / 1000).toFixed(1) + 'K' : total;
+        pillText = formattedTotal + ' votes';
+    }
+    
     return '<button class="' + cls + '" data-pos="' + escAttr(p) + '" onclick="switchPosition(\'' + escAttr(p) + '\')">' + esc(p) + '<span class="pill">' + pillText + '</span></button>';
   }).join('');
 }
