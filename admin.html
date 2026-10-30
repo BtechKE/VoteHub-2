@@ -3013,7 +3013,7 @@ function renderLocations() {
 }
 
 async function loadWards() {
-  const { data } = await db.from('wards').select('*').order('name');
+ const { data } = await db.from('wards').select('*').order('name').limit(3000);
   // Filter wards to only those belonging to the active county's constituencies
   var constIds = CONSTITUENCIES.map(c => c.id);
   WARDS = (data || []).filter(w => constIds.includes(w.constituency_id)); 
@@ -3024,7 +3024,7 @@ async function loadWards() {
 }
 
 async function loadCentres() {
-  const { data } = await db.from('centres').select('*').order('name');
+ const { data } = await db.from('centres').select('*').order('name').limit(10000);
   // Filter centres to only those in the active wards
   var wardIds = WARDS.map(w => w.id);
   CENTRES = (data || []).filter(c => wardIds.includes(c.ward_id)); 
@@ -3035,7 +3035,7 @@ async function loadCentres() {
 }
 
 async function loadStreams() {
-  const { data } = await db.from('streams').select('*').order('code');
+  const { data } = await db.from('streams').select('*').order('code').limit(50000);
   // Filter streams to only those in the active centres
   var centreIds = CENTRES.map(c => c.id);
   STREAMS = (data || []).filter(s => centreIds.includes(s.centre_id)); 
