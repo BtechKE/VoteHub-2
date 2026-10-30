@@ -1023,9 +1023,11 @@ async function submitNow() {
       return;
     }
 
-    btn.disabled = false; 
-    btn.innerHTML = '<i class="fas fa-lock"></i> Submit &amp; Lock';
-    
+    // Keep the button DISABLED so they can't click it again
+btn.disabled = true; 
+btn.innerHTML = '<i class="fas fa-check"></i> Votes Locked';
+
+clearDraft(streamCode, position);
     clearDraft(streamCode, position);
     STATUSES[streamCode][position] = { status: 'submitted' };
 
@@ -1250,6 +1252,12 @@ function openUploadModal(streamCode, position) {
 
 function closeUploadModal() {
   document.getElementById('uploadOptionsModal').classList.remove('active');
+  
+  // If they cancel the upload, gracefully take them back to the Position List
+  // because the votes are already securely locked in the database.
+  if (currentFormStream) {
+    goToPositions(currentFormStream);
+  }
 }
 
 var previewObjectUrl = null;
