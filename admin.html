@@ -3787,8 +3787,8 @@ function candConstChanged() {
 
   if (!name || !party || !code) return toast('Fill name, party, and code.', 'error');
   
-  if ((pos === 'President' || pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
-    return toast('Please select a County for this position.', 'error');
+  if ((pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') && !county) {
+  return toast('Please select a County for this position.', 'error');
   }
   if (pos === 'MP') {
     if (!county)  return toast('Please select a County first.', 'error');
