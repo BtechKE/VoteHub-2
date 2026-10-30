@@ -2899,14 +2899,14 @@ async function loadCounties() {
     return;
   }
 
-  selector.innerHTML = COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)} County</option>`).join('');
+  // Format to Title Case
+  selector.innerHTML = COUNTIES.map(c => `<option value="${c.id}">${toTitleCase(c.name)} County</option>`).join('');
   
   if (!CURRENT_COUNTY) {
     CURRENT_COUNTY = COUNTIES[0].id;
   }
   selector.value = CURRENT_COUNTY;
   
-  // Apply green background on load
   if (CURRENT_COUNTY) selector.classList.add('has-county');
 
   populateResetDropdown();
@@ -2915,9 +2915,8 @@ function populateResetDropdown() {
   var sel = document.getElementById('resetCountySelector');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select County —</option>' + 
-    COUNTIES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    COUNTIES.map(c => `<option value="${c.id}">${toTitleCase(c.name)} County</option>`).join('');
 }
-
 function confirmCountyReset() {
   var countyId = document.getElementById('resetCountySelector').value;
   if (!countyId) return toast('Please select a county first.', 'error');
@@ -2954,8 +2953,7 @@ function confirmCountyReset() {
 function switchCounty(countyId) {
   CURRENT_COUNTY = countyId;
   var countyName = COUNTIES.find(c => c.id === countyId)?.name || 'County';
-  toast('Switched to ' + countyName, 'info');
-  
+toast('Switched to ' + toTitleCase(countyName), 'info');
   // Toggle the green background
   var sel = document.getElementById('globalCountySelector');
   if (countyId) {
@@ -2984,26 +2982,26 @@ function renderLocations() {
     var consts = CONSTITUENCIES.filter(x => x.county_id === c.id);
     html += `<div style="margin-bottom:20px; padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--bg);">`;
     
-    // County Header
+    // County Header - formatted to Title Case
     html += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px dashed var(--border); padding-bottom:10px;">`;
-    html += `<h3 style="font-size:16px; font-weight:700;"><i class="fas fa-building" style="color:var(--primary-dark); margin-right:8px;"></i>${esc(c.name)} County</h3>`;
+    html += `<h3 style="font-size:16px; font-weight:700;"><i class="fas fa-building" style="color:var(--primary-dark); margin-right:8px;"></i>${toTitleCase(c.name)} County</h3>`;
     html += `<button class="btn btn-sm btn-ghost" onclick="deleteCounty('${c.id}')" style="color:var(--danger); border-color:transparent;"><i class="fas fa-trash"></i> Delete County</button>`;
     html += `</div>`;
     
-    // Constituencies List
+    // Constituencies List - formatted to Title Case
     if (consts.length === 0) {
       html += `<div style="font-size:12px; color:var(--text-muted); font-style:italic;">No constituencies added yet.</div>`;
     } else {
       html += `<div class="item-list">`;
       consts.forEach(x => {
-        html += `<span class="item"><span class="item-name">${esc(x.name)}</span><span class="item-actions"><button class="danger" onclick="deleteConstituency('${x.id}')"><i class="fas fa-trash"></i></button></span></span>`;
+        html += `<span class="item"><span class="item-name">${toTitleCase(x.name)}</span><span class="item-actions"><button class="danger" onclick="deleteConstituency('${x.id}')"><i class="fas fa-trash"></i></button></span></span>`;
       });
       html += `</div>`;
     }
     html += `</div>`;
   });
   el.innerHTML = html;
-} 
+}
 
 async function loadWards() {
   const { data } = await db.from('wards').select('*').order('name');
@@ -3151,7 +3149,7 @@ function renderWards() {
     html += emptyHTML('No results found', 'Try a different search term.');
   } else {
     html += '<div class="item-list">' + paginated.map(w => 
-      `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${esc(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`
+      `<span class="item"><span class="item-code">${esc(w.id)}</span><span class="item-name">${toTitleCase(w.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(constMap[w.constituency_id] || 'No Constituency')}</span><span class="item-actions"><button onclick="editWard('${esc(w.id)}','${escAttr(w.name)}','${escAttr(w.constituency_id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteWard('${esc(w.id)}')"><i class="fas fa-trash"></i></button></span></span>`
     ).join('') + '</div>';
   }
   
@@ -3183,7 +3181,7 @@ function renderCentres() {
     html += emptyHTML('No results found', 'Try a different search term.');
   } else {
     html += '<div class="item-list">' + paginated.map(c => 
-      `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${esc(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`
+      `<span class="item"><span class="item-code">${esc(c.id)}</span><span class="item-name">${toTitleCase(c.name)}</span><span style="color:var(--text-faint);font-size:11.5px;">· ${esc(wardMap[c.ward_id] || '')}</span><span class="item-actions"><button onclick="editCentre('${esc(c.id)}')"><i class="fas fa-pen"></i></button><button class="danger" onclick="deleteCentre('${esc(c.id)}')"><i class="fas fa-trash"></i></button></span></span>`
     ).join('') + '</div>';
   }
   
@@ -5234,19 +5232,11 @@ async function submitResetPw(kind, id) {
   
   if (!pw || pw.length < 4) return toast('Password must be at least 4 characters.', 'error');
   if (pw !== pw2) return toast('Passwords do not match.', 'error');
-
-  // We need the email of the agent/aspirant to update their auth account
   var list = kind === 'agent' ? AGENTS : ASPIRANTS;
   var person = list.find(x => String(x.id) === String(id));
   
   if (!person) return toast('User not found.', 'error');
   
-  // Get email from auth.users based on auth_user_id
-  // Since we can't query auth.users directly from the client, we rely on the RPC we just created
-  // We'll fetch the email from a view or just use the auth_user_id directly if we had a join.
-  // Wait, we can't query auth.users. We have to rely on the email format or pass the auth_user_id.
-  
-  // Actually, let's just update it by auth_user_id using a new RPC.
   const { data, error } = await db.rpc('admin_reset_password_by_id', { p_auth_id: person.auth_user_id, p_new_password: pw });
   
   if (error || (data && !data.success)) {
