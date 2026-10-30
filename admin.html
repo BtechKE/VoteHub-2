@@ -2884,18 +2884,15 @@ function openActiveUsers() {
 //  DATA LOADERS
 // ================================================================
 async function loadAllData() {
-  // 1. Load Counties and Constituencies FIRST
   await loadCounties();
   await loadConstituencies();
   
-  // 2. Then load everything else in parallel
   await Promise.all([loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
   
   loadAdminResults();
   loadSubmissionMatrix();
   renderLocations();
 }
-
 async function loadCounties() {
   const { data } = await db.from('counties').select('*').order('name');
   COUNTIES = data || [];
@@ -3017,7 +3014,6 @@ async function loadWards() {
   // Filter wards to only those belonging to the active county's constituencies
   var constIds = CONSTITUENCIES.map(c => c.id);
   WARDS = (data || []).filter(w => constIds.includes(w.constituency_id)); 
-  
   renderWards(); 
   document.getElementById('statWards').textContent = WARDS.length; 
   document.getElementById('badgeWards').textContent = WARDS.length;
