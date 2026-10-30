@@ -2251,14 +2251,15 @@ function setPulse(mode) { var el = document.getElementById('topPulse'); if (!el)
 function timeAgo(ts) { if (!ts) return 'updating…'; var s = Math.floor((Date.now() - ts) / 1000); if (s < 5) return 'just now'; if (s < 60) return s + 's ago'; var m = Math.floor(s / 60); if (m < 60) return m + 'm ago'; var h = Math.floor(m / 60); return h + 'h ago'; }
 function saveSnapshot(position, leaderboard) { try { var snap = { at: Date.now(), byCode: {} }; leaderboard.forEach(function (c) { snap.byCode[c.code] = c.votes; }); sessionStorage.setItem('snap_' + position, JSON.stringify(snap)); } catch (e) {} }
 function getSnapshot(position) { try { var raw = sessionStorage.getItem('snap_' + position); if (!raw) return null; var snap = JSON.parse(raw); return snap.byCode || null; } catch (e) { return null; } }
-function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-function tintBg(hex, alpha) { if (!hex) return ''; hex = String(hex).trim(); if (hex.charAt(0) === '#') hex = hex.slice(1); if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]; if (hex.length !== 6) return ''; var r = parseInt(hex.slice(0, 2), 16); var g = parseInt(hex.slice(2, 4), 16); var b = parseInt(hex.slice(4, 6), 16); if (isNaN(r) || isNaN(g) || isNaN(b)) return ''; return 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha || 0.07) + ')'; }
-function escAttr(s) { return esc(s); }
-function toast(msg, type) { type = type || 'info'; var icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' }; var el = document.createElement('div'); el.className = 'toast ' + type; el.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i><span></span>'; el.querySelector('span').textContent = msg; document.getElementById('toasts').appendChild(el); setTimeout(function () { if (el.parentElement) el.remove(); }, 4000); }
 function toTitleCase(str) {
   if (!str) return '';
   return str.replace(/\w\S*/g, function(txt){ return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase(); });
 }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function tintBg(hex, alpha) { if (!hex) return ''; hex = String(hex).trim(); if (hex.charAt(0) === '#') hex = hex.slice(1); if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]; if (hex.length !== 6) return ''; var r = parseInt(hex.slice(0, 2), 16); var g = parseInt(hex.slice(2, 4), 16); var b = parseInt(hex.slice(4, 6), 16); if (isNaN(r) || isNaN(g) || isNaN(b)) return ''; return 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha || 0.07) + ')'; }
+function escAttr(s) { return esc(s); }
+function toast(msg, type) { type = type || 'info'; var icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' }; var el = document.createElement('div'); el.className = 'toast ' + type; el.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i><span></span>'; el.querySelector('span').textContent = msg; document.getElementById('toasts').appendChild(el); setTimeout(function () { if (el.parentElement) el.remove(); }, 4000); }
+
 function doLogout() {
   thConfirm({
     title: 'Sign out?',
