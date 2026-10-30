@@ -863,19 +863,19 @@ async function loadOverview(silent) {
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
     const { data: consts } = await constQuery;
 
-    let wardQuery = db.from('wards').select('*');
+    let wardQuery = db.from('wards').select('*').limit(3000);
     if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
     else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
     else if (SCOPE_MODE !== 'national') wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
     const { data: wardsData } = await wardQuery;
 
-    let centreQuery = db.from('centres').select('*');
+    let centreQuery = db.from('centres').select('*').limit(10000);
     if (SCOPE_MODE !== 'national') {
         centreQuery = centreQuery.in('ward_id', (wardsData||[]).map(w=>w.id));
     }
     const { data: centresData } = await centreQuery;
 
-    let streamQuery = db.from('streams').select('*');
+   let streamQuery = db.from('streams').select('*').limit(50000);
     if (SCOPE_MODE === 'national' && DRILL_COUNTY_ID) {
         const countyConstIds = (consts || []).filter(c => c.county_id === DRILL_COUNTY_ID).map(c => c.id);
         const countyWardIds = (wardsData || []).filter(w => countyConstIds.includes(w.constituency_id)).map(w => w.id);
@@ -1060,7 +1060,7 @@ async function loadTracker(silent) {
     else if (SCOPE_MODE === 'national' && CURRENT_COUNTY) constQuery = constQuery.eq('county_id', CURRENT_COUNTY);
     const { data: constsData } = await constQuery;
 
-    let wardQuery = db.from('wards').select('*');
+     let wardQuery = db.from('wards').select('*').limit(3000);
     if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
     else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
     else wardQuery = wardQuery.in('constituency_id', (constsData || []).map(c => c.id));
@@ -1068,8 +1068,8 @@ async function loadTracker(silent) {
 
     filterWardIds = (wardsData || []).map(w => w.id);
 
-    var centreQuery = db.from('centres').select('*');
-    var streamQuery = db.from('streams').select('*');
+   var centreQuery = db.from('centres').select('*').limit(10000);
+   var streamQuery = db.from('streams').select('*').limit(50000);
     
     // If we have a specific county selected, filter by those wards
     if (SCOPE_MODE !== 'national' || CURRENT_COUNTY) {
