@@ -750,7 +750,7 @@ async function init() {
   document.getElementById('topName').textContent = USER.name || 'Viewer';
   if (!USER.isSpectator && USER.position && POSITIONS.indexOf(USER.position) !== -1) { VIEW_POS = USER.position; }
 
- if (USER.isSpectator || USER.position === 'President') {
+  if (USER.isSpectator || USER.position === 'President') {
     SCOPE_MODE = 'national';
     DRILL_LEVEL = 'county';
     TRACKER_LEVEL = 'constituency';
@@ -758,33 +758,35 @@ async function init() {
 
     const { data: counties } = await db.from('counties').select('id, name').order('name');
     if (counties && counties.length > 0) {
-      CURRENT_COUNTY = '';                       // was: counties[0].id
+      CURRENT_COUNTY = '';                       
       document.getElementById('aspCountySelector').innerHTML =
-        '<option value="">All Counties</option>' +                       // NEW
-        counties.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-      document.getElementById('aspCountySelector').value = '';           // NEW
+        '<option value="">All Counties</option>' +                       
+        counties.map(c => `<option value="${c.id}">${toTitleCase(c.name)} County</option>`).join('');
+      document.getElementById('aspCountySelector').value = '';           
     }
-  }
-    else {
+  } else {
     let scopeName = 'Scope';
+    
     if (USER.position === 'MCA') {
       SCOPE_MODE = 'ward'; 
       DRILL_LEVEL = 'centre';
       TRACKER_LEVEL = 'centre';
       const { data: w } = await db.from('wards').select('name').eq('id', USER.ward).single();
-      scopeName = w ? w.name + ' Ward' : 'Ward';
+      scopeName = w ? toTitleCase(w.name) + ' Ward' : 'Ward';
+      
     } else if (USER.position === 'MP') {
       SCOPE_MODE = 'constituency'; 
       DRILL_LEVEL = 'ward';
       TRACKER_LEVEL = 'ward';
       const { data: c } = await db.from('constituencies').select('name').eq('id', USER.constituency).single();
-      scopeName = c ? c.name + ' Constituency' : 'Constituency';
+      scopeName = c ? toTitleCase(c.name) + ' Constituency' : 'Constituency';
+      
     } else {
       SCOPE_MODE = 'county'; 
       DRILL_LEVEL = 'constituency';
       TRACKER_LEVEL = 'constituency';
       const { data: c } = await db.from('counties').select('name').eq('id', USER.county).single();
-      scopeName = c ? c.name + ' County' : 'County';
+      scopeName = c ? toTitleCase(c.name) + ' County' : 'County';
     }
     
     document.getElementById('lockedScopeName').textContent = scopeName;
@@ -796,16 +798,16 @@ async function init() {
   startAutoRefresh();
 }
 
-  
-function switchAspCounty(countyId) {
+  function switchAspCounty(countyId) {
   CURRENT_COUNTY = countyId;
   
   if (!countyId) {
+    // User selected "All Counties"
     DRILL_LEVEL = 'county';
     DRILL_COUNTY_ID = '';
     DRILL_COUNTY_NAME = '';
   } else {
-    // Jump straight into the selected county!
+    // User selected a specific county from the dropdown
     DRILL_LEVEL = 'constituency';
     DRILL_COUNTY_ID = countyId;
     
@@ -813,12 +815,15 @@ function switchAspCounty(countyId) {
     DRILL_COUNTY_NAME = countyObj ? countyObj.name : 'County';
   }
 
+  // Clear deeper drill states
   DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
   DRILL_WARD = ''; DRILL_WARD_NAME = '';
   DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
-  TRACKER_DATA = null; 
+  
+  TRACKER_DATA = null;
   loadOverview();
 }
+
 function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(function () {
@@ -1156,15 +1161,22 @@ async function loadTracker(silent) {
 function updateTopMeta() {
   var topMeta = document.getElementById('topMeta'); if (!topMeta) return;
   var label = USER.isSpectator ? 'Observer' : (USER.position || 'Viewer');
-  var wardName = '';
-  if (USER.ward) {
-    if (OVERVIEW && OVERVIEW.wards) {
-      var w = OVERVIEW.wards.filter(function (x) { return x.wardId === USER.ward; })[0];
-      if (w) wardName = w.wardName;
+  
+  // Add the County scope to the top bar
+  if (SCOPE_MODE === 'national') {
+    if (CURRENT_COUNTY) {
+      var cName = OVERVIEW && OVERVIEW.counties ? OVERVIEW.counties.find(c => c.id === CURRENT_COUNTY) : null;
+      label += ' · ' + (cName ? toTitleCase(cName.name) : 'County');
+    } else {
+      label += ' · National';
     }
-    if (!wardName) wardName = USER.ward;
+  } else if (USER.ward && OVERVIEW && OVERVIEW.wards) {
+    var w = OVERVIEW.wards.find(x => x.id === USER.ward);
+    if (w) label += ' · ' + toTitleCase(w.name);
   }
-  var parts = [label]; if (wardName) parts.push(wardName); if (USER.loginCode) parts.push(USER.loginCode);
+  
+  var parts = [label]; 
+  if (USER.loginCode) parts.push(USER.loginCode);
   topMeta.textContent = parts.join(' · ');
 }
 
@@ -1546,18 +1558,20 @@ function drillDown(level, id, name) {
   if (level === 'constituency') {
     DRILL_COUNTY_ID = id; DRILL_COUNTY_NAME = name; DRILL_LEVEL = 'constituency';
     DRILL_CONST_ID = ''; DRILL_CONST_NAME = '';
-    DRILL_WARD = '';     DRILL_WARD_NAME  = '';
-    DRILL_CENTRE = '';   DRILL_CENTRE_NAME = '';
-    // Keep the top-bar dropdown in sync
+    DRILL_WARD = ''; DRILL_WARD_NAME = '';
+    DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
+    
+    // ---> THIS SYNCS THE DROPDOWN WHEN A CARD IS CLICKED <---
     if (SCOPE_MODE === 'national') {
       CURRENT_COUNTY = id;
       const sel = document.getElementById('aspCountySelector');
       if (sel) sel.value = id;
     }
   }
+  
   if (level === 'ward') {
     DRILL_CONST_ID = id; DRILL_CONST_NAME = name; DRILL_LEVEL = 'ward';
-    DRILL_WARD = '';   DRILL_WARD_NAME  = '';
+    DRILL_WARD = ''; DRILL_WARD_NAME = '';
     DRILL_CENTRE = ''; DRILL_CENTRE_NAME = '';
   }
   if (level === 'centre') {
@@ -1567,7 +1581,8 @@ function drillDown(level, id, name) {
   if (level === 'stream') {
     DRILL_CENTRE = id; DRILL_CENTRE_NAME = name; DRILL_LEVEL = 'stream';
   }
-  renderDrillGrid(); renderBoard(); renderBreadcrumb();
+  
+  renderDrillGrid(); renderBoard(); renderBreadcrumb(); renderTabs();
   window.scrollTo({ top: document.getElementById('drillGrid').offsetTop - 100, behavior: 'smooth' });
 }
 
@@ -2240,7 +2255,10 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function
 function tintBg(hex, alpha) { if (!hex) return ''; hex = String(hex).trim(); if (hex.charAt(0) === '#') hex = hex.slice(1); if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]; if (hex.length !== 6) return ''; var r = parseInt(hex.slice(0, 2), 16); var g = parseInt(hex.slice(2, 4), 16); var b = parseInt(hex.slice(4, 6), 16); if (isNaN(r) || isNaN(g) || isNaN(b)) return ''; return 'rgba(' + r + ',' + g + ',' + b + ',' + (alpha || 0.07) + ')'; }
 function escAttr(s) { return esc(s); }
 function toast(msg, type) { type = type || 'info'; var icons = { success: 'fa-circle-check', error: 'fa-circle-exclamation', info: 'fa-circle-info' }; var el = document.createElement('div'); el.className = 'toast ' + type; el.innerHTML = '<i class="fas ' + (icons[type] || icons.info) + '"></i><span></span>'; el.querySelector('span').textContent = msg; document.getElementById('toasts').appendChild(el); setTimeout(function () { if (el.parentElement) el.remove(); }, 4000); }
-
+function toTitleCase(str) {
+  if (!str) return '';
+  return str.replace(/\w\S*/g, function(txt){ return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase(); });
+}
 function doLogout() {
   thConfirm({
     title: 'Sign out?',
