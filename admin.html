@@ -2972,8 +2972,11 @@ toast('Switched to ' + toTitleCase(countyName), 'info');
 }
 
 async function loadConstituencies() {
-  // ONLY load constituencies for the active county
-  const { data } = await db.from('constituencies').select('*').eq('county_id', CURRENT_COUNTY).order('name');
+  const { data } = await db.from('constituencies')
+    .select('*')
+    .eq('county_id', CURRENT_COUNTY)
+    .order('name')
+    .limit(1000); // <--- ADD THIS
   CONSTITUENCIES = data || [];
 }
 
@@ -3010,10 +3013,17 @@ function renderLocations() {
 }
 
 async function loadWards() {
- const { data } = await db.from('wards').select('*').order('name').limit(3000);
-  // Filter wards to only those belonging to the active county's constituencies
+  // Fetch all 3000 wards
+  const { data, error } = await db.from('wards').select('*').order('name').limit(3000);
+  if (error) console.error("Ward fetch error:", error);
+  
+  // Get the IDs of the constituencies for the CURRENTLY selected county
   var constIds = CONSTITUENCIES.map(c => c.id);
+  
+  // Filter the wards to only those in the current county
   WARDS = (data || []).filter(w => constIds.includes(w.constituency_id)); 
+  
+  console.log(`Loaded ${WARDS.length} wards for the current county.`);
   renderWards(); 
   document.getElementById('statWards').textContent = WARDS.length; 
   document.getElementById('badgeWards').textContent = WARDS.length;
