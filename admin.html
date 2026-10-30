@@ -2672,7 +2672,10 @@ function toast(msg, type) {
   document.getElementById('toasts').appendChild(el);
   setTimeout(function () { if (el.parentElement) el.remove(); }, 4500);
 }
-
+function toTitleCase(str) {
+  if (!str) return '';
+  return str.replace(/\w\S*/g, function(txt){ return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase(); });
+}
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function escAttr(s) { return esc(s); }
 
