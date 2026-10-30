@@ -2884,7 +2884,13 @@ function openActiveUsers() {
 //  DATA LOADERS
 // ================================================================
 async function loadAllData() {
-  await Promise.all([loadCounties(), loadConstituencies(), loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
+  // 1. Load Counties and Constituencies FIRST
+  await loadCounties();
+  await loadConstituencies();
+  
+  // 2. Then load everything else in parallel
+  await Promise.all([loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
+  
   loadAdminResults();
   loadSubmissionMatrix();
   renderLocations();
