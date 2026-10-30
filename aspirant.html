@@ -663,6 +663,31 @@
 const supabaseUrl = 'https://qkkhtglsstinsvbdmclt.supabase.co';
 const supabaseKey = 'sb_publishable_AEFOxR5dWWyQu9ZIaYMwLQ_4dPU-RM0';
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+  const PAGE = 1000;
+
+// Pull EVERY row of a query by paging with range()
+async function fetchAll(makeQuery) {
+  let all = [], from = 0;
+  while (true) {
+    const { data, error } = await makeQuery().range(from, from + PAGE - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
+// Same, but for ".in(column, ids)" queries with URL chunking
+async function fetchIn(table, select, column, ids, orderCol = 'id', chunk = 100) {
+  if (!ids || !ids.length) return [];
+  const parts = [];
+  for (let i = 0; i < ids.length; i += chunk) parts.push(ids.slice(i, i + chunk));
+  const out = await Promise.all(parts.map(part =>
+    fetchAll(() => db.from(table).select(select).in(column, part).order(orderCol))
+  ));
+  return out.flat();
+}
 // Helper to get/generate a unique device ID
 function getDeviceId() {
   let devId = localStorage.getItem('tallyhub_device_id');
@@ -858,50 +883,57 @@ async function loadOverview(silent) {
   if (!silent) setPulse('loading');
   try {
     // 1. Fetch Geography
-    let constQuery = db.from('constituencies').select('*');
+    let constQuery = db.from('constituencies').select('*').order('id');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
-    const { data: consts } = await constQuery;
+    const consts = await fetchAll(() => constQuery);
 
-    let wardQuery = db.from('wards').select('*').limit(3000);
-    if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
-    else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
-    else if (SCOPE_MODE !== 'national') wardQuery = wardQuery.in('constituency_id', (consts||[]).map(c=>c.id));
-    const { data: wardsData } = await wardQuery;
-
-    let centreQuery = db.from('centres').select('*').limit(10000);
-    if (SCOPE_MODE !== 'national') {
-        centreQuery = centreQuery.in('ward_id', (wardsData||[]).map(w=>w.id));
+    let wardsData = [];
+    if (SCOPE_MODE === 'ward') {
+        wardsData = await fetchAll(() => db.from('wards').select('*').eq('id', USER.ward).order('id'));
+    } else if (SCOPE_MODE === 'constituency') {
+        wardsData = await fetchAll(() => db.from('wards').select('*').eq('constituency_id', USER.constituency).order('id'));
+    } else if (SCOPE_MODE !== 'national') {
+        wardsData = await fetchIn('wards', '*', 'constituency_id', (consts||[]).map(c=>c.id), 'id');
+    } else {
+        wardsData = await fetchAll(() => db.from('wards').select('*').order('id'));
     }
-    const { data: centresData } = await centreQuery;
 
-   let streamQuery = db.from('streams').select('*').limit(50000);
-    if (SCOPE_MODE === 'national' && DRILL_COUNTY_ID) {
+    let centresData = [];
+    if (SCOPE_MODE === 'national' && !DRILL_COUNTY_ID) {
+        centresData = await fetchAll(() => db.from('centres').select('*').order('id'));
+    } else if (SCOPE_MODE === 'national' && DRILL_COUNTY_ID) {
         const countyConstIds = (consts || []).filter(c => c.county_id === DRILL_COUNTY_ID).map(c => c.id);
         const countyWardIds = (wardsData || []).filter(w => countyConstIds.includes(w.constituency_id)).map(w => w.id);
-        const countyCentreIds = (centresData || []).filter(c => countyWardIds.includes(c.ward_id)).map(c => c.id);
-        streamQuery = streamQuery.in('centre_id', countyCentreIds);
-    } else if (SCOPE_MODE !== 'national') {
-        streamQuery = streamQuery.in('centre_id', (centresData||[]).map(c=>c.id));
+        centresData = await fetchIn('centres', '*', 'ward_id', countyWardIds, 'id');
+    } else {
+        centresData = await fetchIn('centres', '*', 'ward_id', (wardsData||[]).map(w=>w.id), 'id');
     }
-    const { data: streamsData } = await streamQuery;
+
+    let streamsData = [];
+    if (SCOPE_MODE === 'national' && DRILL_COUNTY_ID) {
+        streamsData = await fetchIn('streams', '*', 'centre_id', (centresData||[]).map(c=>c.id), 'code');
+    } else if (SCOPE_MODE === 'national') {
+        streamsData = await fetchAll(() => db.from('streams').select('*').order('code'));
+    } else {
+        streamsData = await fetchIn('streams', '*', 'centre_id', (centresData||[]).map(c=>c.id), 'code');
+    }
 
     // 2. Fetch Candidates & Results
-    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS);
+    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS).order('code');
     if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
         candQuery = candQuery.eq('county_id', USER.county);
     }
-    const { data: cands } = await candQuery;
+    const cands = await fetchAll(() => candQuery);
 
     const activeStreamCodes = (streamsData || []).map(s => s.code);
-    let allResultsQuery = db.from('results').select('stream_code, position, candidate_code, votes');
+    let allResultsData = [];
     if (activeStreamCodes.length > 0) {
-        allResultsQuery = allResultsQuery.in('stream_code', activeStreamCodes);
+        allResultsData = await fetchIn('results', 'stream_code, position, candidate_code, votes', 'stream_code', activeStreamCodes, 'stream_code');
     }
-    const { data: allResultsData } = await allResultsQuery;
     const resultsData = (allResultsData || []).filter(r => r.position === VIEW_POS);
 
-    // 3. Build Lookup Maps
+    // ... REST OF THE LOGIC IS EXACTLY THE SAME ...
     const candMap = {}; (cands || []).forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
     const streamMap = {}; (streamsData || []).forEach(s => streamMap[s.code] = s);
     const centreMap = {}; (centresData || []).forEach(c => centreMap[c.id] = c);
@@ -910,22 +942,14 @@ async function loadOverview(silent) {
 
     let countiesData = [];
     if (SCOPE_MODE === 'national') {
-      const { data: cData } = await db.from('counties').select('*').order('name');
-      countiesData = cData || [];
+      countiesData = await fetchAll(() => db.from('counties').select('*').order('name'));
     }
     
-    // 4. Aggregate Votes (UPDATED FOR DYNAMIC TABS)
     const votesByCounty = {}, votesByConst = {}, votesByWard = {}, votesByCentre = {}, votesByStream = {}, totalByCand = {};
     const tabTotals = {}; POSITIONS.forEach(p => tabTotals[p] = 0);
-    
-    // NEW: Map to hold totals for all positions at every drill level
     const tabTotalsByLevel = { county: {}, const: {}, ward: {}, centre: {}, stream: {} };
     POSITIONS.forEach(p => {
-      tabTotalsByLevel.county[p] = {};
-      tabTotalsByLevel.const[p] = {};
-      tabTotalsByLevel.ward[p] = {};
-      tabTotalsByLevel.centre[p] = {};
-      tabTotalsByLevel.stream[p] = {};
+      tabTotalsByLevel.county[p] = {}; tabTotalsByLevel.const[p] = {}; tabTotalsByLevel.ward[p] = {}; tabTotalsByLevel.centre[p] = {}; tabTotalsByLevel.stream[p] = {};
     });
 
     (resultsData || []).forEach(r => {
@@ -950,10 +974,8 @@ async function loadOverview(silent) {
       votesByCounty[countyId][r.candidate_code] = (votesByCounty[countyId][r.candidate_code]||0) + r.votes;
     });
 
-    // NEW: Build the dynamic tab totals for ALL positions based on the active streams
     (allResultsData || []).forEach(r => {
       if (tabTotals[r.position] !== undefined) tabTotals[r.position] += r.votes;
-
       const stream = streamMap[r.stream_code]; if (!stream) return;
       const centre = centreMap[stream.centre_id]; if (!centre) return;
       const ward = wardMap[centre.ward_id]; if (!ward) return;
@@ -969,7 +991,6 @@ async function loadOverview(silent) {
       }
     });
 
-    // 5. Leaderboard
     let leaderboard = (cands || []).map(c => ({
       code: c.code, name: c.name, party: c.party, photo_url: c.photo_url, color: c.color || '#A5CF83', votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
@@ -983,7 +1004,6 @@ async function loadOverview(silent) {
         if (idx !== -1) { ownRow = leaderboard[idx]; ownRank = idx + 1; }
     }
 
-    // ADDED tabTotalsByLevel to the OVERVIEW object
     OVERVIEW = {
       viewingPosition: VIEW_POS, leaderboard: leaderboard, globalTotal, ownRow, ownRank,
       leader: leaderboard[0], runner: leaderboard[1], 
@@ -1052,44 +1072,43 @@ async function loadTracker(silent) {
   if (!silent) document.getElementById('trackerGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>';
   try {
     var filterWardIds = [];
-    var activeCounty = (SCOPE_MODE === 'national') ? CURRENT_COUNTY : USER.county;
 
-    let constQuery = db.from('constituencies').select('*');
+    let constQuery = db.from('constituencies').select('*').order('id');
     if (SCOPE_MODE === 'constituency') constQuery = constQuery.eq('id', USER.constituency);
     else if (SCOPE_MODE === 'county') constQuery = constQuery.eq('county_id', USER.county);
     else if (SCOPE_MODE === 'national' && CURRENT_COUNTY) constQuery = constQuery.eq('county_id', CURRENT_COUNTY);
-    const { data: constsData } = await constQuery;
+    const constsData = await fetchAll(() => constQuery);
 
-     let wardQuery = db.from('wards').select('*').limit(3000);
-    if (SCOPE_MODE === 'ward') wardQuery = wardQuery.eq('id', USER.ward);
-    else if (SCOPE_MODE === 'constituency') wardQuery = wardQuery.eq('constituency_id', USER.constituency);
-    else wardQuery = wardQuery.in('constituency_id', (constsData || []).map(c => c.id));
-    const { data: wardsData } = await wardQuery;
+    let wardsData = [];
+    if (SCOPE_MODE === 'ward') {
+        wardsData = await fetchAll(() => db.from('wards').select('*').eq('id', USER.ward).order('id'));
+    } else if (SCOPE_MODE === 'constituency') {
+        wardsData = await fetchAll(() => db.from('wards').select('*').eq('constituency_id', USER.constituency).order('id'));
+    } else {
+        wardsData = await fetchIn('wards', '*', 'constituency_id', (constsData||[]).map(c=>c.id), 'id');
+    }
 
     filterWardIds = (wardsData || []).map(w => w.id);
 
-   var centreQuery = db.from('centres').select('*').limit(10000);
-   var streamQuery = db.from('streams').select('*').limit(50000);
+    let centresData = [];
+    let streamsData = [];
     
-    // If we have a specific county selected, filter by those wards
     if (SCOPE_MODE !== 'national' || CURRENT_COUNTY) {
-        centreQuery = centreQuery.in('ward_id', filterWardIds);
-        streamQuery = streamQuery.in('ward_id', filterWardIds);
+        centresData = await fetchIn('centres', '*', 'ward_id', filterWardIds, 'id');
+        streamsData = await fetchIn('streams', '*', 'centre_id', (centresData||[]).map(c=>c.id), 'code');
     } else {
-        // National Tracker Demo Limit
-        streamQuery = streamQuery.limit(2000); 
+        centresData = await fetchAll(() => db.from('centres').select('*').order('id'));
+        streamsData = await fetchAll(() => db.from('streams').select('*').order('code'));
     }
-
-    const [ { data: centresData }, { data: streamsData } ] = await Promise.all([
-        centreQuery, streamQuery
-    ]);
 
     var streamCodes = (streamsData || []).map(s => s.code);
     
-    const [ { data: resultsData }, { data: formsData } ] = await Promise.all([
-        db.from('results').select('stream_code, position').in('stream_code', streamCodes),
-        db.from('form_photos').select('stream_code, position, photo_url').in('stream_code', streamCodes)
-    ]);
+    let resultsData = [];
+    let formsData = [];
+    if (streamCodes.length > 0) {
+        resultsData = await fetchIn('results', 'stream_code, position', 'stream_code', streamCodes, 'stream_code');
+        formsData = await fetchIn('form_photos', 'stream_code, position, photo_url', 'stream_code', streamCodes, 'stream_code');
+    }
 
     TRACKER_FORMS = {};
     (formsData || []).forEach(f => {
@@ -1097,7 +1116,6 @@ async function loadTracker(silent) {
     });
 
     const reportedMap = {};
-    
     (resultsData || []).forEach(r => {
         if (!reportedMap[r.stream_code]) reportedMap[r.stream_code] = {};
         reportedMap[r.stream_code][r.position] = true;
@@ -1153,7 +1171,6 @@ async function loadTracker(silent) {
     console.error(err); if (!silent) toast('Connection error.', 'error');
   }
 }
-
 
 // ================================================================
 //  RENDERING — TABS & HERO
