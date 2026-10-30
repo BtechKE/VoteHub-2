@@ -823,12 +823,12 @@ function startAutoRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(function () {
     if (document.hidden) return;
-    if (CURRENT_VIEW === 'results') {
+      if (CURRENT_VIEW === 'results') {
       if (DRILL_WARD || DRILL_CENTRE) return;
-      if (lastRefreshAt && Date.now() - lastRefreshAt < 4.5 * 60 * 1000) return;
+      if (lastRefreshAt && Date.now() - lastRefreshAt < 4.5 * 60 * 1000) return; // Change this to 60 * 1000 (60 seconds)
       silentRefresh();
     } else if (CURRENT_VIEW === 'tracker') {
-      if (trackerRefreshAt && Date.now() - trackerRefreshAt < 80 * 1000) return;
+      if (trackerRefreshAt && Date.now() - trackerRefreshAt < 80 * 1000) return; // Change this to 30 * 1000 (30 seconds)
       loadTracker(true);
     }
   }, 30000);
