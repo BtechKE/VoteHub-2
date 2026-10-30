@@ -2587,6 +2587,35 @@ body::after {
 const supabaseUrl = 'https://qkkhtglsstinsvbdmclt.supabase.co';
 const supabaseKey = 'sb_publishable_AEFOxR5dWWyQu9ZIaYMwLQ_4dPU-RM0';
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+const PAGE = 1000;
+
+// Pull EVERY row of a query by paging with range()
+async function fetchAll(makeQuery) {
+  let all = [], from = 0;
+  while (true) {
+    const { data, error } = await makeQuery().range(from, from + PAGE - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
+// Same, but for ".in()" queries, with URL chunking and pagination
+async function fetchIn(table, select, column, ids, orderCol = 'id', extraFilter = null, chunk = 100) {
+  if (!ids || !ids.length) return [];
+  const parts = [];
+  for (let i = 0; i < ids.length; i += chunk) parts.push(ids.slice(i, i + chunk));
+  const out = await Promise.all(parts.map(part => {
+    return fetchAll(() => {
+       let q = db.from(table).select(select).in(column, part).order(orderCol);
+       if (extraFilter) q = extraFilter(q);
+       return q;
+    });
+  }));
+  return out.flat();
+}
 
 // ================================================================
 //  STATE
@@ -2886,8 +2915,11 @@ function openActiveUsers() {
 async function loadAllData() {
   await loadCounties();
   await loadConstituencies();
+  await loadWards();      // Waits for Constituencies
+  await loadCentres();    // Waits for Wards
+  await loadStreams();    // Waits for Centres
   
-  await Promise.all([loadWards(), loadCentres(), loadStreams(), loadCandidates(), loadAgents(), loadAspirants()]);
+  await Promise.all([loadCandidates(), loadAgents(), loadAspirants()]);
   
   loadAdminResults();
   loadSubmissionMatrix();
@@ -2972,14 +3004,10 @@ toast('Switched to ' + toTitleCase(countyName), 'info');
 }
 
 async function loadConstituencies() {
-  const { data } = await db.from('constituencies')
-    .select('*')
-    .eq('county_id', CURRENT_COUNTY)
-    .order('name')
-    .limit(1000); // <--- ADD THIS
-  CONSTITUENCIES = data || [];
+  CONSTITUENCIES = await fetchAll(() =>
+    db.from('constituencies').select('*').eq('county_id', CURRENT_COUNTY).order('id'));
+  CONSTITUENCIES.sort((a, b) => a.name.localeCompare(b.name));
 }
-
 function renderLocations() {
   var el = document.getElementById('locationsList');
   if (!COUNTIES.length) {
@@ -3013,53 +3041,42 @@ function renderLocations() {
 }
 
 async function loadWards() {
-  // Fetch all 3000 wards
-  const { data, error } = await db.from('wards').select('*').order('name').limit(3000);
-  if (error) console.error("Ward fetch error:", error);
-  
-  // Get the IDs of the constituencies for the CURRENTLY selected county
-  var constIds = CONSTITUENCIES.map(c => c.id);
-  
-  // Filter the wards to only those in the current county
-  WARDS = (data || []).filter(w => constIds.includes(w.constituency_id)); 
-  
-  console.log(`Loaded ${WARDS.length} wards for the current county.`);
-  renderWards(); 
-  document.getElementById('statWards').textContent = WARDS.length; 
+  WARDS = await fetchIn('wards', '*', 'constituency_id', CONSTITUENCIES.map(c => c.id), 'id');
+  WARDS.sort((a, b) => a.name.localeCompare(b.name));
+  renderWards();
+  document.getElementById('statWards').textContent = WARDS.length;
   document.getElementById('badgeWards').textContent = WARDS.length;
 }
-
 async function loadCentres() {
- const { data } = await db.from('centres').select('*').order('name').limit(10000);
-  // Filter centres to only those in the active wards
-  var wardIds = WARDS.map(w => w.id);
-  CENTRES = (data || []).filter(c => wardIds.includes(c.ward_id)); 
-  
-  renderCentres(); 
-  document.getElementById('statCentres').textContent = CENTRES.length; 
+  CENTRES = await fetchIn('centres', '*', 'ward_id', WARDS.map(w => w.id), 'id');
+  CENTRES.sort((a, b) => a.name.localeCompare(b.name));
+  renderCentres();
+  document.getElementById('statCentres').textContent = CENTRES.length;
   document.getElementById('badgeCentres').textContent = CENTRES.length;
 }
 
 async function loadStreams() {
-  const { data } = await db.from('streams').select('*').order('code').limit(50000);
-  // Filter streams to only those in the active centres
-  var centreIds = CENTRES.map(c => c.id);
-  STREAMS = (data || []).filter(s => centreIds.includes(s.centre_id)); 
-  
-  renderStreams(); 
-  document.getElementById('statStreams').textContent = STREAMS.length; 
+  STREAMS = await fetchIn('streams', '*', 'centre_id', CENTRES.map(c => c.id), 'code');
+  renderStreams();
+  document.getElementById('statStreams').textContent = STREAMS.length;
   document.getElementById('badgeStreams').textContent = STREAMS.length;
 }
 
 async function loadCandidates() {
- 
-  const { data } = await db.from('candidates').select('*').order('name');
-  
-  // Keep candidates for the current county OR any National candidates (President)
-  CANDIDATES = (data || []).filter(c => c.county_id === CURRENT_COUNTY || c.position === 'President');
-  
-  renderCandidates(); 
-  document.getElementById('statCandidates').textContent = CANDIDATES.length; 
+  const all = await fetchAll(() => db.from('candidates').select('*').order('code'));
+  const constIds = new Set(CONSTITUENCIES.map(c => c.id));
+  const wardIds  = new Set(WARDS.map(w => w.id));
+
+  CANDIDATES = all.filter(c =>
+    c.position === 'President' ||
+    c.county_id === CURRENT_COUNTY ||
+    (c.position === 'MP'  && constIds.has(c.constituency_id)) ||
+    (c.position === 'MCA' && wardIds.has(c.ward_id))
+  );
+  CANDIDATES.sort((a, b) => a.name.localeCompare(b.name));
+
+  renderCandidates();
+  document.getElementById('statCandidates').textContent = CANDIDATES.length;
   document.getElementById('badgeCandidates').textContent = CANDIDATES.length;
 }
 
@@ -4233,11 +4250,15 @@ async function loadAdminResults() {
   var activeStreamCodes = STREAMS.map(s => s.code);
   if (activeStreamCodes.length === 0) activeStreamCodes = ['NONE'];
 
-  const [ { data: resultsData } ] = await Promise.all([
-    db.from('results').select('stream_code, candidate_code, votes, position').in('stream_code', activeStreamCodes)
-  ]);
+  // --- FIX: Replaced the .in() query with fetchIn ---
+  const resultsData = await fetchIn(
+    'results', 
+    'stream_code, candidate_code, votes, position', 
+    'stream_code', 
+    activeStreamCodes, 
+    'stream_code'
+  );
 
-  // Use the global CANDIDATES array so we don't refetch it!
   var candMap = {}; 
   CANDIDATES.forEach(c => { c.photo_url = normalizeImageUrl(c.photo_url); candMap[c.code] = c; });
   
@@ -4543,13 +4564,12 @@ async function loadSubmissionMatrix() {
       return;
     }
 
-    // FETCH RESULTS AND FORMS
-    const [ { data: results }, { data: formsData } ] = await Promise.all([
-      db.from('results').select('stream_code, position').in('stream_code', activeStreamCodes),
-      db.from('form_photos').select('stream_code, position, photo_url').in('stream_code', activeStreamCodes)
+    // --- FIX: Replaced the .in() queries with fetchIn ---
+    const [results, formsData] = await Promise.all([
+      fetchIn('results', 'stream_code, position', 'stream_code', activeStreamCodes, 'stream_code'),
+      fetchIn('form_photos', 'stream_code, position, photo_url', 'stream_code', activeStreamCodes, 'stream_code')
     ]);
 
-    // Build the FORMS dictionary
     TRACKER_FORMS = {};
     (formsData || []).forEach(f => {
         TRACKER_FORMS[f.stream_code + '_' + f.position] = f.photo_url;
@@ -4566,7 +4586,6 @@ async function loadSubmissionMatrix() {
     var fullyReported = 0;
     var groups = [];
 
-    // Use the global WARDS and CENTRES arrays (already filtered by county)
     WARDS.forEach(w => {
       var wCentres = CENTRES.filter(c => c.ward_id === w.id);
       wCentres.forEach(c => {
@@ -4614,7 +4633,6 @@ async function loadSubmissionMatrix() {
     document.getElementById('trackerList').innerHTML = '<div class="empty">Failed to load tracker data.</div>';
   }
 }
-
 function populateTrackerWards() {
   if (!TRACKER_DATA) return;
   var constSel = document.getElementById('trackerConstituency');
@@ -4902,6 +4920,7 @@ function selectExportPos(pos) {
   document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.toggle('active', b.dataset.pos === pos); });
   document.getElementById('exportGoBtn').disabled = false;
 }
+
 async function generatePDF() {
   if (!exportSelectedPos) return;
   var pos = exportSelectedPos;
@@ -4911,34 +4930,37 @@ async function generatePDF() {
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
 
   try {
-    // 1. Fetch data based on scope (National for President, County for others)
     var isNational = (pos === 'President');
-    
-    let resultsQuery = db.from('results').select('stream_code, candidate_code, votes').eq('position', pos);
-    let formsQuery = db.from('form_photos').select('stream_code').eq('position', pos);
-    
-    if (!isNational) {
-      resultsQuery = resultsQuery.in('stream_code', STREAMS.map(s=>s.code));
-      formsQuery = formsQuery.in('stream_code', STREAMS.map(s=>s.code));
+    let cands, resultsData, formsData, allStreams, allWards, allConsts, allCounties;
+
+    // --- FIX: Use fetchAll and fetchIn to bypass the 1000 limit ---
+    if (isNational) {
+      const [ c, r, f, s, w, co, ct ] = await Promise.all([
+        fetchAll(() => db.from('candidates').select('*').eq('position', pos).order('code')),
+        fetchAll(() => db.from('results').select('stream_code, candidate_code, votes').eq('position', pos).order('stream_code')),
+        fetchAll(() => db.from('form_photos').select('stream_code').eq('position', pos).order('stream_code')),
+        fetchAll(() => db.from('streams').select('*').order('code')),
+        fetchAll(() => db.from('wards').select('*').order('id')),
+        fetchAll(() => db.from('constituencies').select('*').order('id')),
+        fetchAll(() => db.from('counties').select('*').order('id'))
+      ]);
+      cands = c; resultsData = r; formsData = f; allStreams = s; allWards = w; allConsts = co; allCounties = ct;
+    } else {
+      const streamCodes = STREAMS.map(s=>s.code);
+      const [ c, r, f ] = await Promise.all([
+        fetchAll(() => db.from('candidates').select('*').eq('position', pos).order('code')),
+        fetchIn('results', 'stream_code, candidate_code, votes', 'stream_code', streamCodes, 'stream_code', q => q.eq('position', pos)),
+        fetchIn('form_photos', 'stream_code', 'stream_code', streamCodes, 'stream_code', q => q.eq('position', pos))
+      ]);
+      cands = c; resultsData = r; formsData = f; 
+      allStreams = STREAMS; allWards = WARDS; allConsts = CONSTITUENCIES; allCounties = COUNTIES.filter(c=>c.id===CURRENT_COUNTY);
     }
 
-    const [ { data: cands }, { data: resultsData }, { data: formsData }, { data: allStreams }, { data: allWards }, { data: allConsts }, { data: allCounties } ] = await Promise.all([
-      db.from('candidates').select('*').eq('position', pos), 
-      resultsQuery,
-      formsQuery,
-      isNational ? db.from('streams').select('*') : { data: STREAMS },
-      isNational ? db.from('wards').select('*') : { data: WARDS },
-      isNational ? db.from('constituencies').select('*') : { data: CONSTITUENCIES },
-      isNational ? db.from('counties').select('*') : { data: COUNTIES.filter(c=>c.id===CURRENT_COUNTY) }
-    ]);
-
-    // 2. Build Lookup Maps
     var candMap = {}; (cands||[]).forEach(c => candMap[c.code] = c);
     var streamMap = {}; (allStreams||[]).forEach(s => streamMap[s.code] = s);
     var wardMap = {}; (allWards||[]).forEach(w => wardMap[w.id] = w);
     var constMap = {}; (allConsts||[]).forEach(c => constMap[c.id] = c);
     
-    // 3. Aggregate Votes & Forms (Down to the Ward level)
     var totalByCand = {}, votesByWard = {}, formsByWard = {};
     
     (resultsData || []).forEach(r => {
@@ -4958,13 +4980,11 @@ async function generatePDF() {
       formsByWard[ward.id] = (formsByWard[ward.id]||0) + 1;
     });
 
-    // 4. Build Overall Leaderboard
     var leaderboard = (cands||[]).map(c => ({
       name: c.name, party: c.party, votes: totalByCand[c.code] || 0
     })).sort((a,b) => b.votes - a.votes);
     var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
 
-    // 5. Build the Hierarchy
     var hierarchy = [];
     
     (allCounties || []).forEach(county => {
@@ -4985,13 +5005,11 @@ async function generatePDF() {
           var wStreams = allStreams.filter(s => s.ward_id === w.id);
           var wForms = formsByWard[w.id] || 0;
 
-          // Add to county totals
           countyForms += wForms;
           wCands.forEach(c => {
             countyVotesObj[c.name] = (countyVotesObj[c.name]||0) + c.votes;
           });
 
-          // Only add if there is data to save space on the PDF
           if (wCands.length > 0 || wStreams.length > 0) {
             countyWardsArr.push({
               constituencyName: cst.name,
@@ -5018,7 +5036,6 @@ async function generatePDF() {
       }
     });
 
-    // 6. Generate the PDF
     var data = {
       position: pos,
       county: isNational ? 'Republic of Kenya' : (CONFIG.County || COUNTIES.find(c=>c.id===CURRENT_COUNTY)?.name || 'County'),
@@ -5043,7 +5060,6 @@ async function generatePDF() {
     btn.innerHTML = '<i class="fas fa-file-pdf"></i> Generate PDF';
   }
 }
-
   
 function buildPositionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
