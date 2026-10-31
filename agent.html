@@ -879,12 +879,30 @@ async function goToEntry(streamCode, position) {
     // 1. Get candidates for this position
     let query = db.from('candidates').select('*').eq('position', position);
     
-    // 2. If it is MCA, we MUST filter by the stream's specific ward
-    if (position === 'MCA') {
+    // 2. Apply Geographic Filters based on the Stream's location
+    if (position !== 'President') {
       if (!currentStream.wardId) {
         throw new Error("Stream does not have a Ward ID assigned.");
       }
-      query = query.eq('ward_id', currentStream.wardId);
+
+      // Fetch the Constituency ID for this Ward
+      const { data: wardInfo } = await db.from('wards').select('constituency_id').eq('id', currentStream.wardId).single();
+      
+      if (wardInfo) {
+        if (position === 'MP') {
+          // MPs are scoped to the Constituency
+          query = query.eq('constituency_id', wardInfo.constituency_id);
+        } else if (position === 'MCA') {
+          // MCAs are scoped to the Ward
+          query = query.eq('ward_id', currentStream.wardId);
+        } else {
+          // Governor, Senator, Women Rep are scoped to the County
+          const { data: constInfo } = await db.from('constituencies').select('county_id').eq('id', wardInfo.constituency_id).single();
+          if (constInfo) {
+            query = query.eq('county_id', constInfo.county_id);
+          }
+        }
+      }
     }
     
     const { data: cands, error } = await query;
@@ -894,9 +912,10 @@ async function goToEntry(streamCode, position) {
     renderEntryForm();
   } catch (e) {
     console.error(e);
-    document.getElementById('entryCandidateList').innerHTML = '<div class="empty-state"><div class="title">No candidates found</div><div class="sub">' + esc(e.message) + '</div></div>';
+    document.getElementById('candidateEntryList').innerHTML = '<div class="empty-state"><div class="title">No candidates found</div><div class="sub">' + esc(e.message) + '</div></div>';
   }
 }
+
 function renderEntryForm() {
   if (!currentCandidates.length) {
     document.getElementById('candidateEntryList').innerHTML = '<div class="empty-state"><div class="title">No candidates</div></div>';
