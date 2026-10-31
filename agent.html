@@ -1002,50 +1002,89 @@ function collectVotes() {
 async function submitNow() {
   closeConfirm();
   var btn = document.getElementById('submitBtn');
-  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting…';
+  btn.disabled = true; 
   
   var streamCode = currentStream.code;
   var position = currentPosition;
   var payload = collectVotes();
 
-  try {
-    const { data, error } = await db.rpc('submit_election_results', {
-      p_stream_code: streamCode,
-      p_position: position,
-      p_votes: payload
-    });
+  // We will try up to 5 times to beat a poor network
+  let maxRetries = 5;
+  let success = false;
+  let attempt = 0;
 
-    if (error) throw error;
+  while (attempt < maxRetries && !success) {
+    attempt++;
+    btn.innerHTML = attempt === 1 
+      ? '<i class="fas fa-spinner fa-spin"></i> Securing votes…' 
+      : `<i class="fas fa-sync-alt fa-spin"></i> Retrying (${attempt}/${maxRetries})…`;
 
-    if (!data.success) {
-      toast(data.message, 'error');
-      btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Submit &amp; Lock';
-      return;
+    try {
+      // 1. Attempt to send to Supabase
+      const { data, error } = await db.rpc('submit_election_results', {
+        p_stream_code: streamCode,
+        p_position: position,
+        p_votes: payload
+      });
+
+      if (error) throw error;
+
+      if (!data.success) {
+        // If the database says "Already submitted", we handle it gracefully
+        if (data.message.includes('already submitted')) {
+          toast('These votes are already locked.', 'info');
+          goToPositions(streamCode); // Kick them back to the menu
+          return;
+        }
+        throw new Error(data.message);
+      }
+
+      // If we reach here, it was successful!
+      success = true;
+
+    } catch (err) {
+      console.warn(`Attempt ${attempt} failed:`, err.message);
+      
+      // If it's the last attempt, stop and show error
+      if (attempt >= maxRetries) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-lock"></i> Submit & Lock';
+        toast('Network too weak. Move to a better spot and try again.', 'error');
+        return;
+      }
+      
+      // Wait 3 seconds before retrying (to let the network catch up)
+      toast('Network unstable. Retrying securely...', 'info');
+      await new Promise(r => setTimeout(r, 3000));
     }
+  }
 
-    // Keep the button DISABLED so they can't click it again
-btn.disabled = true; 
-btn.innerHTML = '<i class="fas fa-check"></i> Votes Locked';
-
-clearDraft(streamCode, position);
+  // --- SUCCESS BLOCK ---
+  if (success) {
     clearDraft(streamCode, position);
     STATUSES[streamCode][position] = { status: 'submitted' };
 
-    document.getElementById('successTitle').textContent = position + ' Submitted!';
+    // Update the UI to show a massive success state
+    btn.innerHTML = '<i class="fas fa-check-circle"></i> Votes Locked';
+    btn.style.background = 'var(--primary)';
+    btn.style.color = 'var(--text)';
+
+    document.getElementById('successTitle').textContent = position + ' Secured!';
     document.getElementById('successSub').textContent = 'Data securely locked. Please upload the form.';
     document.getElementById('successOverlay').classList.add('active');
 
+    // Move to photo upload after 2 seconds
     setTimeout(() => {
       document.getElementById('successOverlay').classList.remove('active');
+      
+      // Reset button for the next position
+      btn.style.background = '';
+      btn.style.color = '';
+      
       setTimeout(() => {
-        openUploadModal(streamCode, position); // <--- FIXED: Calls the correct new function
+        openUploadModal(streamCode, position);
       }, 300);
     }, 2000);
-
-  } catch (e) {
-    console.error(e);
-    btn.disabled = false; btn.innerHTML = '<i class="fas fa-lock"></i> Submit &amp; Lock';
-    toast('Connection error. Try again.', 'error');
   }
 }
 function advanceAfterSubmit(streamCode, position) {
