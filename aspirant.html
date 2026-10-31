@@ -2439,6 +2439,39 @@ function closeCustomSelect() {
   activeSelectElement = null;
   isOpeningSelect = false;
 }
+  // ================================================================
+//  SECURITY: AUTO-LOGOUT AFTER 20 MINUTES OF INACTIVITY
+// ================================================================
+var idleTimer;
+var IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(forceLogout, IDLE_TIMEOUT_MS);
+}
+
+async function forceLogout() {
+  // Optional: Show a quick toast before kicking them out
+  if (typeof toast === 'function') {
+    toast('Session expired due to inactivity. Logging out...', 'error');
+  }
+  
+  // Give them 2 seconds to see the toast, then sign out
+  setTimeout(async () => {
+    await db.auth.signOut();
+    window.location.href = 'index.html';
+  }, 2000);
+}
+
+// These events detect if the user is actively using the phone/computer
+window.addEventListener('mousemove', resetIdleTimer, true);
+window.addEventListener('keydown', resetIdleTimer, true);
+window.addEventListener('scroll', resetIdleTimer, true);
+window.addEventListener('touchstart', resetIdleTimer, true); // For mobile phones
+window.addEventListener('click', resetIdleTimer, true);
+
+// Start the timer immediately when the page loads
+resetIdleTimer();
   // START
 init();
 </script>
