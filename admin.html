@@ -4919,7 +4919,7 @@ function selectExportPos(pos) {
   exportSelectedPos = pos;
   document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.toggle('active', b.dataset.pos === pos); });
   document.getElementById('exportGoBtn').disabled = false;
-}
+}    
 async function generatePDF() {
   if (!exportSelectedPos) return;
   var pos = exportSelectedPos;
@@ -4975,7 +4975,6 @@ async function generatePDF() {
       votesByWard[ward.id][r.candidate_code] = (votesByWard[ward.id][r.candidate_code]||0) + r.votes;
     });
 
-    // Calculate Registered Voters (If you added it to the streams table)
     (allStreams || []).forEach(s => {
        if (s.registered_voters) totalRegisteredVoters += Number(s.registered_voters);
     });
@@ -4993,7 +4992,6 @@ async function generatePDF() {
     var totalVotes = leaderboard.reduce((s, c) => s + c.votes, 0);
     var margin = leaderboard.length > 1 ? (leaderboard[0].votes - leaderboard[1].votes) : 0;
     
-    // Find missing forms
     var missingForms = [];
     (allStreams || []).forEach(s => {
         var hasForm = (formsData || []).find(f => f.stream_code === s.code);
@@ -5015,10 +5013,8 @@ async function generatePDF() {
       totalVotes: totalVotes,
       totalRegisteredVoters: totalRegisteredVoters,
       margin: margin,
-      votesByWard: votesByWard,
-      wardMap: wardMap,
-      constMap: constMap,
-      hierarchy: buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams),
+      // FIX 1: Pass candMap into buildHierarchy
+      hierarchy: buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap),
       isNational: isNational,
       missingForms: missingForms,
       generatedAt: new Date().toISOString()
@@ -5036,8 +5032,8 @@ async function generatePDF() {
   }
 }
 
-// Helper to organize the hierarchy properly
-function buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams) {
+// FIX 1: Add candMap as a parameter here
+function buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap) {
     var hierarchy = [];
     (allCounties || []).forEach(county => {
       var cConsts = (allConsts || []).filter(c => c.county_id === county.id);
@@ -5071,7 +5067,9 @@ function buildPositionPDF(data) {
   var GREEN = [165, 207, 131], GREEN_DARK = [126, 174, 92], INK = [26, 26, 25], SLATE = [67, 86, 99], BORDER = [230, 230, 230];
   
   var timestamp = new Date(data.generatedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  var hash = 'TH-' + data.position.substring(0,3).toUpperCase() + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  
+  // FIX 2: Wrap in String() to prevent uppercase crashes if data is somehow missing
+  var hash = 'TH-' + String(data.position || 'UNK').substring(0,3).toUpperCase() + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
   // --- PAGE 1: COVER PAGE ---
   doc.setFillColor(INK[0], INK[1], INK[2]);
@@ -5087,10 +5085,12 @@ function buildPositionPDF(data) {
   doc.text('TALLY REPORT', pageW / 2, 112, { align: 'center' });
   
   doc.setFontSize(16); doc.setTextColor(GREEN[0], GREEN[1], GREEN[2]);
-  doc.text(data.position.toUpperCase(), pageW / 2, 140, { align: 'center' });
+  // FIX 2: Wrap in String()
+  doc.text(String(data.position || 'Unknown').toUpperCase(), pageW / 2, 140, { align: 'center' });
   
   doc.setFontSize(12); doc.setTextColor(255, 255, 255);
-  doc.text(data.county.toUpperCase(), pageW / 2, 150, { align: 'center' });
+  // FIX 2: Wrap in String()
+  doc.text(String(data.county || 'Unknown').toUpperCase(), pageW / 2, 150, { align: 'center' });
   
   doc.setFontSize(10); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
   doc.text('Generated: ' + timestamp, pageW / 2, 240, { align: 'center' });
@@ -5112,8 +5112,8 @@ function buildPositionPDF(data) {
     doc.rect(marginL, 30, pageW - marginL - marginR, 40);
     
     doc.setFontSize(14); doc.text('LEADING CANDIDATE', marginL + 5, 40);
-    doc.setFontSize(18); doc.text(winner.name, marginL + 5, 50);
-    doc.setFontSize(12); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(winner.party, marginL + 5, 58);
+    doc.setFontSize(18); doc.text(String(winner.name), marginL + 5, 50);
+    doc.setFontSize(12); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(String(winner.party), marginL + 5, 58);
     doc.setFontSize(16); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.text(winner.votes.toLocaleString() + ' Votes', marginL + 5, 66);
     
     doc.setFontSize(12); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text('Margin of Victory:', pageW - marginR - 40, 50);
@@ -5135,13 +5135,16 @@ function buildPositionPDF(data) {
   
   data.hierarchy.forEach(h => {
     if (currentY > pageH - 40) { doc.addPage(); currentY = 20; }
-    doc.setFontSize(14); doc.setTextColor(INK[0], INK[1], INK[2]); doc.text(h.countyName.toUpperCase(), marginL, currentY); currentY += 8;
+    doc.setFontSize(14); doc.setTextColor(INK[0], INK[1], INK[2]); 
+    // FIX 2: Wrap in String()
+    doc.text(String(h.countyName || 'Unknown').toUpperCase(), marginL, currentY); currentY += 8;
     
     h.subAreas.forEach(sub => {
       if (currentY > pageH - 40) { doc.addPage(); currentY = 20; }
-      doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); doc.text(sub.constituencyName + ' > ' + sub.wardName + ' Ward (Forms: ' + sub.formsCount + '/' + sub.totalStreams + ')', marginL, currentY); currentY += 5;
+      doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
+      doc.text(sub.constituencyName + ' > ' + sub.wardName + ' Ward (Forms: ' + sub.formsCount + '/' + sub.totalStreams + ')', marginL, currentY); currentY += 5;
       
-      var rows = sub.candidates.slice(0, 3).map((c, idx) => [idx + 1, c.name, c.party, c.votes.toLocaleString(), sub.totalVotes > 0 ? ((c.votes/sub.totalVotes)*100).toFixed(1)+'%' : '0.0%']);
+      var rows = sub.candidates.slice(0, 3).map((c, idx) => [idx + 1, String(c.name), String(c.party), c.votes.toLocaleString(), sub.totalVotes > 0 ? ((c.votes/sub.totalVotes)*100).toFixed(1)+'%' : '0.0%']);
       
       doc.autoTable({
         startY: currentY,
@@ -5160,7 +5163,6 @@ function buildPositionPDF(data) {
     doc.addPage();
     doc.setFontSize(14); doc.setTextColor(196, 69, 58); doc.text('MISSING STATUTORY FORMS AUDIT', marginL, 20);
     
-    // 4-Column Grid
     var colWidth = (pageW - marginL - marginR) / 4;
     var startY = 30;
     var rowH = 12;
@@ -5173,21 +5175,21 @@ function buildPositionPDF(data) {
         if (y > pageH - 20) { doc.addPage(); y = 20; x = marginL; colCount = 0; }
         
         doc.setFontSize(8); doc.setTextColor(INK[0], INK[1], INK[2]);
-        doc.text(mf.ward.substring(0, 15), x, y);
+        // FIX 2: Wrap in String()
+        doc.text(String(mf.ward || 'Unknown').substring(0, 15), x, y);
         doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
-        doc.text(mf.centre.substring(0, 15) + ' (' + mf.stream + ')', x, y + 4);
+        doc.text(String(mf.centre || 'Unknown').substring(0, 15) + ' (' + String(mf.stream) + ')', x, y + 4);
         
         x += colWidth;
         colCount++;
     });
   }
 
-  var safePos = data.position.replace(/\s+/g, ''); 
-  var safeCon = data.county.replace(/\s+/g, '');
+  // FIX 2: Wrap in String()
+  var safePos = String(data.position || 'Position').replace(/\s+/g, ''); 
+  var safeCon = String(data.county || 'County').replace(/\s+/g, '');
   doc.save('TallyHub-' + safePos + '-' + safeCon + '.pdf');
   }
-      
-
 // ================================================================
 //  SETTINGS & CONFIG
 // ================================================================
