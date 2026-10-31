@@ -414,6 +414,36 @@ body {
   .stream-card, .position-card, .candidate-entry { background: rgba(255,255,255,0.92) !important; }
   .sub-header, .entry-footer { background: rgba(226,232,240,0.97) !important; }
 }
+    /* ================================================================
+   PSYCHOLOGICAL TRICK: LIVE PULSING RED DOT
+================================================================ */
+.live-dot-red {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #FF3B30; /* Vivid Red */
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  position: relative;
+  box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+  animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(255, 59, 48, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
+  }
+}
   </style>
 </head>
 <body>
@@ -423,7 +453,7 @@ body {
   <div class="topbar-brand">
     <div class="topbar-mark"><i class="fas fa-vote-yea"></i></div>
     <div class="brand-text">
-      <div class="brand-name">TallyHub</div>
+      <div class="brand-name">TallyHub <span class="live-dot-red"></span></div>
       <div class="brand-sub">Presiding Agent</div>
     </div>
   </div>
@@ -605,6 +635,7 @@ body {
     </button>
   </div>
 </div>
+  
 
 <script>
 // ================================================================
