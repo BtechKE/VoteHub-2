@@ -464,66 +464,96 @@ const supabaseKey = 'sb_publishable_AEFOxR5dWWyQu9ZIaYMwLQ_4dPU-RM0';
   }
 
   async function doLogin() {
-    if (!currentRole) return;
-    const id = document.getElementById('loginId').value.trim();
-    const pw = document.getElementById('loginPassword').value;
-    const errBox = document.getElementById('loginError');
-    const errText = document.getElementById('loginErrorText');
-    const btn = document.getElementById('loginBtn');
+  if (!currentRole) return;
+  
+  const id = document.getElementById('loginId').value.trim();
+  const pw = document.getElementById('loginPassword').value;
+  const errBox = document.getElementById('loginError');
+  const errText = document.getElementById('loginErrorText');
+  const btn = document.getElementById('loginBtn');
 
-    if (!id || !pw) {
-      errText.textContent = 'Please fill all fields.';
+  // --- 1. CHECK IF LOCKED OUT ---
+  const lockoutUntil = parseInt(localStorage.getItem('login_lockout') || '0');
+  if (Date.now() < lockoutUntil) {
+    const secondsLeft = Math.ceil((lockoutUntil - Date.now()) / 1000);
+    errText.textContent = `Too many failed attempts. Please wait ${secondsLeft} seconds.`;
+    errBox.classList.add('active');
+    return;
+  }
+
+  if (!id || !pw) {
+    errText.textContent = 'Please fill all fields.';
+    errBox.classList.add('active');
+    return;
+  }
+
+  errBox.classList.remove('active');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Signing in…</span>';
+
+  const email = id + '@tallyhub.com';
+  const { data, error } = await db.auth.signInWithPassword({ email: email, password: pw });
+
+  if (error) {
+    // --- 2. HANDLE FAILED ATTEMPT ---
+    let fails = parseInt(localStorage.getItem('login_fails') || '0');
+    fails++;
+    localStorage.setItem('login_fails', fails.toString());
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Sign In</span>';
+
+    if (fails >= 3) {
+      // Lock them out for 20 seconds
+      const lockTime = Date.now() + 20000; 
+      localStorage.setItem('login_lockout', lockTime.toString());
+      localStorage.setItem('login_fails', '0'); // Reset fails for after the lockout
+      
+      startLockoutTimer(errText, errBox);
+    } else {
+      // Show normal error with attempts remaining
+      errText.textContent = `Invalid ID or password. ${3 - fails} attempt(s) remaining.`;
       errBox.classList.add('active');
-      return;
     }
+    return;
+  }
 
-    errBox.classList.remove('active');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Signing in…</span>';
+  // --- 3. SUCCESSFUL LOGIN ---
+  localStorage.removeItem('login_fails');
+  localStorage.removeItem('login_lockout');
+  
+  btn.innerHTML = '<i class="fas fa-check"></i> <span>Success! Redirecting...</span>';
+  
+  if (currentRole === 'admin') {
+    window.location.href = 'admin.html';
+  } else if (currentRole === 'agent') {
+    window.location.href = 'agent.html';
+  } else if (currentRole === 'aspirant') {
+    window.location.href = 'aspirant.html';
+  }
+}
 
-    const email = id + '@tallyhub.com';
-    const { data, error } = await db.auth.signInWithPassword({ email: email, password: pw });
+// --- HELPER FUNCTION FOR COUNTDOWN UI ---
+function startLockoutTimer(errText, errBox) {
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  
+  const interval = setInterval(() => {
+    const lockoutUntil = parseInt(localStorage.getItem('login_lockout') || '0');
+    const secondsLeft = Math.ceil((lockoutUntil - Date.now()) / 1000);
 
-    if (error) {
+    if (secondsLeft <= 0) {
+      clearInterval(interval);
+      errBox.classList.remove('active');
       btn.disabled = false;
       btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> <span>Sign In</span>';
-      errText.textContent = 'Invalid ID or password.';
+    } else {
+      errText.textContent = `Too many failed attempts. Please wait ${secondsLeft}s.`;
       errBox.classList.add('active');
-      return;
+      btn.innerHTML = `<i class="fas fa-lock"></i> <span>Locked (${secondsLeft}s)</span>`;
     }
-
-    btn.innerHTML = '<i class="fas fa-check"></i> <span>Success! Redirecting...</span>';
-    
-    if (currentRole === 'admin') {
-      window.location.href = 'admin.html';
-    } else if (currentRole === 'agent') {
-      window.location.href = 'agent.html';
-    } else if (currentRole === 'aspirant') {
-      window.location.href = 'aspirant.html';
-    }
-  }
-    // Toggle Password Visibility
-  document.addEventListener('DOMContentLoaded', function() {
-    const toggleBtn = document.getElementById('togglePasswordBtn');
-    const passwordInput = document.getElementById('loginPassword');
-    const toggleIcon = document.getElementById('togglePasswordIcon');
-
-    if (toggleBtn && passwordInput && toggleIcon) {
-      toggleBtn.addEventListener('click', function() {
-        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-        passwordInput.setAttribute('type', type);
-        
-        // Toggle the eye icons
-        if (type === 'text') {
-          toggleIcon.classList.remove('fa-eye');
-          toggleIcon.classList.add('fa-eye-slash');
-        } else {
-          toggleIcon.classList.remove('fa-eye-slash');
-          toggleIcon.classList.add('fa-eye');
-        }
-      });
-    }
-  });
+  }, 1000);
+}
 </script>
 </body>
 </html>
