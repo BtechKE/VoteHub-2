@@ -897,6 +897,12 @@ function goToPositions(streamCode) {
 //  ENTRY FORM
 // ================================================================
 async function goToEntry(streamCode, position) {
+  // --- GUARD CLAUSE: Prevent editing if already submitted ---
+  if (STATUSES[streamCode] && STATUSES[streamCode][position]?.status === 'submitted') {
+    goToReadonly(streamCode, position);
+    return;
+  }
+
   currentStream = STREAMS.find(s => s.code === streamCode);
   currentPosition = position;
   var num = currentStream.streamNumber < 10 ? '0' + currentStream.streamNumber : String(currentStream.streamNumber);
@@ -910,7 +916,7 @@ async function goToEntry(streamCode, position) {
     // 1. Get candidates for this position
     let query = db.from('candidates').select('*').eq('position', position);
     
-    // 2. Apply Geographic Filters based on the Stream's location
+    // 2. Apply Geographic Filters based on the Stream's location (Zero-Trust)
     if (position !== 'President') {
       if (!currentStream.wardId) {
         throw new Error("Stream does not have a Ward ID assigned.");
