@@ -2591,24 +2591,32 @@ async function loadWarRoom() {
 function renderWarRoom() {
   var grid = document.getElementById('warRoomGrid');
   
-  // 1. Filter data based on current drill level & scope
+  // 1. Filter data based on the aspirant's locked scope
   var filtered = WAR_DATA.filter(function(item) {
-      if (WAR_DRILL_LEVEL === 'county') return true; 
-      if (WAR_DRILL_LEVEL === 'constituency') return item.countyId === DRILL_COUNTY_ID;
-      if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
-      if (WAR_DRILL_LEVEL === 'stream') return item.wardId === WAR_DRILL_WARD;
+      // If they are a Governor (County scope), show all streams in their county
+      if (SCOPE_MODE === 'county') return item.countyId === USER.county;
+      
+      // If they are an MP (Constituency scope)
+      if (SCOPE_MODE === 'constituency') return item.constId === USER.constituency;
+      
+      // If they are an MCA (Ward scope)
+      if (SCOPE_MODE === 'ward') return item.wardId === USER.ward;
+      
+      // If National (President)
       return true;
   });
 
+  // If there are truly no streams in the database for this scope
   if (filtered.length === 0) {
-      grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon" style="color:#4A7C3A;background:rgba(165,207,131,0.2);"><i class="fas fa-shield-check"></i></div><div class="empty-title">No Streams Yet</div><div class="empty-sub">No results have been submitted for this area yet.</div></div>';
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon" style="color:#4A7C3A;background:rgba(165,207,131,0.2);"><i class="fas fa-shield-check"></i></div><div class="empty-title">No Streams Reported</div><div class="empty-sub">No results have been submitted for your area yet.</div></div>';
       return;
   }
 
   var html = '';
   
-  // 2. Draw the Cards based on Level
-  if (WAR_DRILL_LEVEL === 'constituency') {
+  // 2. Draw the Cards
+  if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') {
+      // Group by Constituency
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.constId]) {
@@ -2638,6 +2646,7 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'ward') {
+      // Group by Ward
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.wardId]) {
@@ -2666,6 +2675,7 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'stream') {
+      // Show Streams
       filtered.forEach(f => {
           var color = f.hasAnomaly ? '#C4453A' : (!f.hasForm ? '#b8860b' : '#4A7C3A');
           var status = f.hasAnomaly ? 'MATH ANOMALY' : (!f.hasForm ? 'MISSING FORM' : 'CLEAN');
@@ -2685,28 +2695,6 @@ function renderWarRoom() {
   }
 
   grid.innerHTML = html;
-  
-  // Render Breadcrumbs
-  var bc = document.getElementById('warRoomBreadcrumb');
-  var bcHtml = `<button class="bc-seg current" onclick="resetWarRoom()">All</button>`;
-  if (WAR_DRILL_CONST) bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg" onclick="drillWarRoom('ward', '${WAR_DRILL_CONST}', '')">Constituency</button>`;
-  if (WAR_DRILL_WARD) bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg current">Ward</button>`;
-  if(bc) bc.innerHTML = bcHtml;
-}
-
-function resetWarRoom() {
-  if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'county';
-  else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
-  else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
-  else WAR_DRILL_LEVEL = 'stream';
-  
-  WAR_DRILL_COUNTY = ''; WAR_DRILL_CONST = ''; WAR_DRILL_WARD = '';
-  renderWarRoom();
-}
-
-function openWarRoomStream(streamCode) {
-    // We will build the bottom sheet logic for this in the next step!
-    toast("Opening details for " + streamCode, "info");
 }
               
   // START
