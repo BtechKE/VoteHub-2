@@ -1215,10 +1215,10 @@ function closeConfirm() { document.getElementById('confirmModal').classList.remo
 
 function collectVotes() {
   return [].map.call(document.querySelectorAll('#candidateEntryList .vote-input'), inp => ({
-    candidateCode: inp.closest('.candidate-entry').getAttribute('data-code'),
+    candidate_code: inp.closest('.candidate-entry').getAttribute('data-code'), // <--- FIXED
     votes: parseInt(inp.value, 10) || 0
   }));
-}
+    }
 
 async function submitNow() {
   closeConfirm();
