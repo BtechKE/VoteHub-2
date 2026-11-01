@@ -1333,14 +1333,14 @@ async function goToReadonly(streamCode, position) {
   
   var formHtml = '';
   if (hasForm || localPreview) {
-  var imgSrc = localPreview || ''; 
-  formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
-    <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
-    <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
-  </div>
-  <button class="btn" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px; background: var(--primary) !important; color: var(--text) !important; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);" onclick="openUploadModal('${streamCode}', '${position}')">
-  <i class="fas fa-sync-alt"></i> Replace Photo
-</button>`;
+    var imgSrc = localPreview || ''; 
+    formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
+      <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
+      <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
+    </div>
+    <button class="btn" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px; background: var(--primary) !important; color: var(--text) !important; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);" onclick="openUploadModal('${streamCode}', '${position}')">
+    <i class="fas fa-sync-alt"></i> Replace Photo
+  </button>`;
   
   if (!localPreview && hasForm) {
     db.storage.from('form-photos').createSignedUrl(streamCode + '_' + position.replace(/\s+/g, '') + '.jpg', 600).then(({data}) => {
@@ -1365,35 +1365,57 @@ async function goToReadonly(streamCode, position) {
   showScreen('screenReadonly');
 
   try {
-    // 1. Fetch just the raw results
-    const { data, error } = await db.from('results')
-      .select('votes, submitted_by, created_at, candidate_code')
+    // 1. Fetch the raw results
+    const { data: results, error: resError } = await db.from('results')
+      .select('votes, submitted_by, created_at, candidate_code, total_votes_cast, rejected_votes')
       .eq('stream_code', streamCode).eq('position', position);
 
-    if (error) throw error;
+    if (resError) throw resError;
 
-    if (!data || !data.length) { 
+    if (!results || !results.length) { 
       goToEntry(streamCode, position); 
       return; 
     }
 
-    // 2. THE FIX: Build a map of the candidates that are ALREADY in memory
-    var candsMap = {};
-    currentCandidates.forEach(c => {
-        candsMap[c.code] = c;
-    });
+    // 2. Fetch the candidates manually to guarantee names load
+    const { data: allCands, error: candError } = await db.from('candidates')
+      .select('code, name, party, photo_url').eq('position', position);
+      
+    if (candError) throw candError;
 
+    // 3. Build a map for quick lookup
+    var candMap = {};
+    (allCands || []).forEach(c => { candMap[c.code] = c; });
+
+    // 4. Extract Turnout Data from the first result row
+    var totalCast = results[0].total_votes_cast || 0;
+    var rejected = results[0].rejected_votes || 0;
+    var validVotes = totalCast - rejected;
+
+    // 5. Build the Read-Only HTML
     var html = '<div class="readonly-info">' +
-      '<div class="readonly-info-row"><i class="fas fa-user-check"></i> Submitted by <strong>' + esc(data[0].submitted_by) + '</strong></div>' +
-      '<div class="readonly-info-row"><i class="fas fa-clock"></i> ' + new Date(data[0].created_at).toLocaleString() + '</div>' +
+      '<div class="readonly-info-row"><i class="fas fa-user-check"></i> Submitted by <strong>' + esc(results[0].submitted_by) + '</strong></div>' +
+      '<div class="readonly-info-row"><i class="fas fa-clock"></i> ' + new Date(results[0].created_at).toLocaleString() + '</div>' +
       '<div class="readonly-info-row"><i class="fas fa-lock"></i> Locked</div>' +
     '</div>';
+
+    // Add Turnout Stats block
+    if (totalCast > 0) {
+      html += '<div class="turnout-card" style="margin-bottom: 16px; background: #F8FAFC; border: 1px solid #E2E8F0;">' +
+        '<div class="turnout-header" style="color: #6B7C93;"><span><i class="fas fa-users"></i> TURNOUT DATA</span></div>' +
+        '<div class="turnout-grid">' +
+          '<div class="turnout-item"><label>Total Cast</label><div class="turnout-valid-num" style="color:#0F172A;">' + totalCast + '</div></div>' +
+          '<div class="turnout-item"><label>Rejected</label><div class="turnout-valid-num" style="color:#C4453A;">' + rejected + '</div></div>' +
+          '<div class="turnout-item valid-box"><label>Valid Votes</label><div class="turnout-valid-num">' + validVotes + '</div></div>' +
+        '</div>' +
+      '</div>';
+    }
     
-    data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
+    // 6. Render Candidates
+    results.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
       var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
       
-      // 3. Look up the candidate from our local map using candidate_code
-      var candInfo = candsMap[r.candidate_code] || {};
+      var candInfo = candMap[r.candidate_code] || {};
       
       var candName = candInfo.name || 'Unknown';
       var candParty = candInfo.party || '';
@@ -1420,8 +1442,7 @@ async function goToReadonly(streamCode, position) {
     console.error("Readonly Error:", err);
     document.getElementById('readonlyBody').innerHTML = '<div class="empty-state"><div class="title">Error loading results</div><div class="sub">' + esc(err.message) + '</div></div>';
   }
-        }
-
+}
 // ================================================================
 //  UTILS & UI HELPERS
 // ================================================================
