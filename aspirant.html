@@ -630,24 +630,27 @@
       <div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Loading…</div>
     </div>
   </div><!-- /trackerView -->
-<div class="tracker-summary" style="grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px;">
-  <div class="tracker-stat" style="border-top: 3px solid #4A7C3A;">
-    <div class="num" style="color: #4A7C3A;" id="warGreenCount">0</div>
-    <div class="lbl" style="font-size: 9px;">Clean</div>
+
+<!-- WAR ROOM VIEW (NEW) -->
+<div id="warRoomView" style="display:none;">
+  <div class="tracker-summary" style="grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px;">
+    <div class="tracker-stat" style="border-top: 3px solid #4A7C3A;">
+      <div class="num" style="color: #4A7C3A;" id="warGreenCount">0</div>
+      <div class="lbl" style="font-size: 9px;">Clean</div>
+    </div>
+    <div class="tracker-stat" style="border-top: 3px solid #b8860b;">
+      <div class="num" style="color: #b8860b;" id="warYellowCount">0</div>
+      <div class="lbl" style="font-size: 9px;">No Form</div>
+    </div>
+    <div class="tracker-stat" style="border-top: 3px solid #C4453A;">
+      <div class="num" style="color: #C4453A;" id="warRedCount">0</div>
+      <div class="lbl" style="font-size: 9px;">Anomaly</div>
+    </div>
+    <div class="tracker-stat" style="border-top: 3px solid #6B7C93;">
+      <div class="num" style="color: #6B7C93;" id="warGreyCount">0</div>
+      <div class="lbl" style="font-size: 9px;">Silent</div>
+    </div>
   </div>
-  <div class="tracker-stat" style="border-top: 3px solid #b8860b;">
-    <div class="num" style="color: #b8860b;" id="warYellowCount">0</div>
-    <div class="lbl" style="font-size: 9px;">No Form</div>
-  </div>
-  <div class="tracker-stat" style="border-top: 3px solid #C4453A;">
-    <div class="num" style="color: #C4453A;" id="warRedCount">0</div>
-    <div class="lbl" style="font-size: 9px;">Anomaly</div>
-  </div>
-  <div class="tracker-stat" style="border-top: 3px solid #6B7C93;">
-    <div class="num" style="color: #6B7C93;" id="warGreyCount">0</div>
-    <div class="lbl" style="font-size: 9px;">Silent</div>
-  </div>
-</div>
 
   <div class="section-head">
     <div>
@@ -660,7 +663,7 @@
   <div class="grid" id="warRoomGrid">
     <div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning for anomalies…</div>
   </div>
-</div>
+</div><!-- /warRoomView -->
 
   <!-- FOOTER -->
   <div class="foot">
@@ -2596,12 +2599,100 @@ async function loadWarRoom() {
   }
 }
 
- function renderWarRoom() {
+// ================================================================
+//  WAR ROOM LOGIC
+// ================================================================
+var WAR_DATA = null;
+var WAR_DRILL_LEVEL = 'national';
+var WAR_DRILL_COUNTY = '';
+var WAR_DRILL_CONST = '';
+var WAR_DRILL_WARD = '';
+
+async function loadWarRoom() {
+  document.getElementById('warRoomGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning database…</div>';
+  
+  try {
+    // 1. Fetch the reported turnout data
+    const { data: turnout, error } = await db.from('stream_turnout').select('*');
+    if (error) throw error;
+
+    // 2. Fetch form photos
+    const { data: forms } = await db.from('form_photos').select('stream_code');
+    var formSet = new Set((forms || []).map(f => f.stream_code));
+
+    // 3. Build a map of reported streams for quick lookup
+    var reportedMap = {};
+    (turnout || []).forEach(t => { reportedMap[t.stream_code] = t; });
+
+    var anomalies = [];
+    var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
+
+    // 4. Loop through ALL streams assigned to this user's scope
+    (OVERVIEW.streams || []).forEach(s => {
+      var t = reportedMap[s.code];
+      
+      if (!t) {
+        // GHOST STREAM: It's assigned, but hasn't reported
+        silentCount++;
+        anomalies.push({
+          streamCode: s.code, 
+          countyId: s.county_id || '', 
+          constId: s.constituency_id || 'UNKNOWN', 
+          wardId: s.ward_id || '', 
+          status: 'silent', 
+          hasAnomaly: false, 
+          hasForm: false, 
+          cast: 0, rejected: 0, valid: 0, registered: s.registered_voters || 0
+        });
+      } else {
+        // REPORTED STREAM
+        var hasForm = formSet.has(t.stream_code);
+        var isAnomaly = t.has_anomaly;
+        
+        if (isAnomaly) anomalyCount++;
+        else if (!hasForm) missingFormCount++;
+        else cleanCount++;
+
+        anomalies.push({
+          streamCode: t.stream_code, 
+          countyId: t.county_id || '', 
+          constId: t.constituency_id || 'UNKNOWN', 
+          wardId: t.ward_id || '',
+          status: isAnomaly ? 'anomaly' : (!hasForm ? 'no-form' : 'clean'), 
+          hasAnomaly: isAnomaly, hasForm: hasForm, 
+          cast: t.total_cast, rejected: t.rejected, valid: t.valid_votes, registered: t.registered_voters
+        });
+      }
+    });
+
+    // Update Summary Counts
+    document.getElementById('warGreenCount').textContent = cleanCount;
+    document.getElementById('warYellowCount').textContent = missingFormCount;
+    document.getElementById('warRedCount').textContent = anomalyCount;
+    if(document.getElementById('warGreyCount')) document.getElementById('warGreyCount').textContent = silentCount;
+
+    WAR_DATA = anomalies;
+    
+    // Auto-set drill level
+    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'county';
+    else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
+    else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
+    else WAR_DRILL_LEVEL = 'stream';
+
+    renderWarRoom();
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('warRoomGrid').innerHTML = '<div class="empty">Error loading War Room data.</div>';
+  }
+}
+
+function renderWarRoom() {
   var grid = document.getElementById('warRoomGrid');
   
   // Filter based on drill level
   var filtered = WAR_DATA.filter(function(item) {
-      if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') return true; // We are grouping by const
+      if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') return true; 
       if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
       if (WAR_DRILL_LEVEL === 'stream') return item.wardId === WAR_DRILL_WARD;
       return true;
@@ -2618,7 +2709,12 @@ async function loadWarRoom() {
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.constId]) {
-              var cName = OVERVIEW.consts.find(c=>c.id===f.constId)?.name || f.constId;
+              var cName = 'Unknown Constituency';
+              if (f.constId !== 'UNKNOWN' && OVERVIEW.consts) {
+                  var found = OVERVIEW.consts.find(c => c.id === f.constId);
+                  if (found) cName = found.name;
+                  else cName = f.constId; // fallback to ID
+              }
               grouped[f.constId] = { name: cName, items: [] };
           }
           grouped[f.constId].items.push(f);
@@ -2651,7 +2747,11 @@ async function loadWarRoom() {
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.wardId]) {
-              var wName = OVERVIEW.wards.find(w=>w.id===f.wardId)?.name || f.wardId;
+              var wName = 'Unknown Ward';
+              if (f.wardId && OVERVIEW.wards) {
+                  var found = OVERVIEW.wards.find(w => w.id === f.wardId);
+                  if (found) wName = found.name;
+              }
               grouped[f.wardId] = { name: wName, items: [] };
           }
           grouped[f.wardId].items.push(f);
@@ -2699,7 +2799,14 @@ async function loadWarRoom() {
   }
 
   grid.innerHTML = html;
-                } 
+}
+
+function drillWarRoom(level, id, name) {
+    if (level === 'constituency') { WAR_DRILL_COUNTY = id; WAR_DRILL_LEVEL = 'constituency'; }
+    if (level === 'ward') { WAR_DRILL_CONST = id; WAR_DRILL_LEVEL = 'ward'; }
+    if (level === 'stream') { WAR_DRILL_WARD = id; WAR_DRILL_LEVEL = 'stream'; }
+    renderWarRoom();
+          }
 
               
   // START
