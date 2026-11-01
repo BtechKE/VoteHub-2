@@ -2523,10 +2523,10 @@ window.addEventListener('click', resetIdleTimer, true);
 resetIdleTimer();
 
 // ================================================================
-//  WAR ROOM LOGIC (FULL HIERARCHY)
+//  WAR ROOM LOGIC (CORRECTED HIERARCHY)
 // ================================================================
 var WAR_DATA = null;
-var WAR_DRILL_LEVEL = 'constituency';
+var WAR_DRILL_LEVEL = 'constituency'; // Always start at constituency for Governor
 var WAR_DRILL_CONST = '';
 var WAR_DRILL_WARD = '';
 var WAR_DRILL_CENTRE = '';
@@ -2552,6 +2552,7 @@ async function loadWarRoom() {
     var anomalies = [];
     var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
 
+    // Walk down the tree perfectly
     (OVERVIEW.streams || []).forEach(s => {
       var centre = centreMap[s.centre_id];
       var ward = centre ? wardMap[centre.ward_id] : null;
@@ -2565,7 +2566,7 @@ async function loadWarRoom() {
           streamCode: s.code, 
           constId: ward.constituency_id, 
           wardId: ward.id, 
-          centreId: centre.id, // NEW: Added Centre ID
+          centreId: centre.id, 
           status: 'silent', 
           hasAnomaly: false, hasForm: false, cast: 0, rejected: 0, valid: 0, registered: s.registered_voters || 0
         });
@@ -2581,7 +2582,7 @@ async function loadWarRoom() {
           streamCode: t.stream_code, 
           constId: ward.constituency_id,
           wardId: ward.id,
-          centreId: centre.id, // NEW: Added Centre ID
+          centreId: centre.id, 
           status: isAnomaly ? 'anomaly' : (!hasForm ? 'no-form' : 'clean'), 
           hasAnomaly: isAnomaly, hasForm: hasForm, 
           cast: t.total_cast, rejected: t.rejected, valid: t.valid_votes, registered: t.registered_voters
@@ -2596,7 +2597,8 @@ async function loadWarRoom() {
 
     WAR_DATA = anomalies;
     
-    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'county';
+    // Set starting level based on user scope
+    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'constituency'; // Actually counties for national, but this works for Governor
     else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
     else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
     else WAR_DRILL_LEVEL = 'centre';
@@ -2613,7 +2615,7 @@ function renderWarRoom() {
   var bc = document.getElementById('warRoomBreadcrumb');
   
   // 1. Render Breadcrumbs
-  var bcHtml = `<button class="bc-seg ${WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county' ? 'current' : ''}" onclick="resetWarRoom()">All Constituencies</button>`;
+  var bcHtml = `<button class="bc-seg ${WAR_DRILL_LEVEL === 'constituency' ? 'current' : ''}" onclick="resetWarRoom()">All Constituencies</button>`;
   
   if (WAR_DRILL_CONST) {
       var cName = OVERVIEW.consts.find(c=>c.id===WAR_DRILL_CONST)?.name || 'Constituency';
@@ -2629,9 +2631,9 @@ function renderWarRoom() {
   }
   bc.innerHTML = bcHtml;
 
-  // 2. Filter Data
+  // 2. Filter Data based on the exact level
   var filtered = WAR_DATA.filter(function(item) {
-      if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') return true; 
+      if (WAR_DRILL_LEVEL === 'constituency') return true; 
       if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
       if (WAR_DRILL_LEVEL === 'centre') return item.wardId === WAR_DRILL_WARD;
       if (WAR_DRILL_LEVEL === 'stream') return item.centreId === WAR_DRILL_CENTRE;
@@ -2646,7 +2648,7 @@ function renderWarRoom() {
   var html = '';
   
   // 3. Render Cards
-  if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') {
+  if (WAR_DRILL_LEVEL === 'constituency') {
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.constId]) {
@@ -2681,7 +2683,6 @@ function renderWarRoom() {
       }
   } 
   else if (WAR_DRILL_LEVEL === 'ward') {
-      // Group by CENTRE now
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.centreId]) {
@@ -2716,7 +2717,6 @@ function renderWarRoom() {
       }
   } 
   else if (WAR_DRILL_LEVEL === 'centre') {
-      // Show the actual STREAMS in this Centre
       filtered.forEach(f => {
           var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
           var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN'));
@@ -2740,9 +2740,21 @@ function renderWarRoom() {
 }
 
 function drillWarRoom(level, id, name) {
-    if (level === 'constituency') { WAR_DRILL_CONST = id; WAR_DRILL_LEVEL = 'constituency'; }
-    if (level === 'ward') { WAR_DRILL_WARD = id; WAR_DRILL_LEVEL = 'ward'; }
-    if (level === 'centre') { WAR_DRILL_CENTRE = id; WAR_DRILL_LEVEL = 'centre'; }
+    if (level === 'ward') { 
+        WAR_DRILL_CONST = id; 
+        WAR_DRILL_LEVEL = 'ward'; 
+        WAR_DRILL_WARD = ''; 
+        WAR_DRILL_CENTRE = ''; 
+    }
+    if (level === 'centre') { 
+        WAR_DRILL_WARD = id; 
+        WAR_DRILL_LEVEL = 'centre'; 
+        WAR_DRILL_CENTRE = ''; 
+    }
+    if (level === 'stream') { 
+        WAR_DRILL_CENTRE = id; 
+        WAR_DRILL_LEVEL = 'stream'; 
+    }
     renderWarRoom();
 }
 
@@ -2793,7 +2805,10 @@ function openWarRoomStream(streamCode) {
 
     sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">${esc(streamCode)}</div><div class="sheet-sub">Stream Details</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>${content}`;
     bg.classList.add('active');
-      }
+                                     }
+  
+
+
 
   // START
 init();
