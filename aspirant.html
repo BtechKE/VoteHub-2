@@ -2524,20 +2524,19 @@ var WAR_DRILL_LEVEL = 'national';
 var WAR_DRILL_COUNTY = '';
 var WAR_DRILL_CONST = '';
 var WAR_DRILL_WARD = '';
-
 async function loadWarRoom() {
-  document.getElementById('warRoomGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning database for anomalies…</div>';
+  document.getElementById('warRoomGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning database…</div>';
   
   try {
-    // 1. Fetch the turnout data view
+    // 1. Fetch the turnout data
     const { data: turnout, error } = await db.from('stream_turnout').select('*');
     if (error) throw error;
 
-    // 2. Fetch form photos to know which forms are missing
+    // 2. Fetch form photos
     const { data: forms } = await db.from('form_photos').select('stream_code');
     var formSet = new Set((forms || []).map(f => f.stream_code));
 
-    // 3. Build the data structure
+    // 3. Process and store
     var anomalies = [];
     var cleanCount = 0, missingFormCount = 0, anomalyCount = 0;
 
@@ -2570,16 +2569,11 @@ async function loadWarRoom() {
 
     WAR_DATA = anomalies;
     
-    // Initialize drill level based on user scope
-    if (SCOPE_MODE === 'national') {
-        WAR_DRILL_LEVEL = 'county';
-    } else if (SCOPE_MODE === 'county') {
-        WAR_DRILL_LEVEL = 'constituency';
-    } else if (SCOPE_MODE === 'constituency') {
-        WAR_DRILL_LEVEL = 'ward';
-    } else {
-        WAR_DRILL_LEVEL = 'stream';
-    }
+    // Auto-set the drill level based on scope
+    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'county';
+    else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
+    else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
+    else WAR_DRILL_LEVEL = 'stream';
 
     renderWarRoom();
 
@@ -2591,43 +2585,30 @@ async function loadWarRoom() {
 function renderWarRoom() {
   var grid = document.getElementById('warRoomGrid');
   
-  // 1. Filter data using the exact same maps your Results tab uses
+  // 1. Filter: Only show streams that exist in the OVERVIEW data (which belongs to this aspirant)
   var filtered = WAR_DATA.filter(function(item) {
-      // If National, show everything
+      // If national, show all
       if (SCOPE_MODE === 'national') return true;
       
-      // If County (Governor/Senator/Women Rep), check if the constituency belongs to this county
-      if (SCOPE_MODE === 'county') {
-          // OVERVIEW.consts contains ONLY the constituencies for this aspirant's county
-          return OVERVIEW.consts.some(c => c.id === item.constId);
-      }
-      
-      // If Constituency (MP)
-      if (SCOPE_MODE === 'constituency') {
-          return OVERVIEW.consts.some(c => c.id === item.constId && c.id === USER.constituency);
-      }
-      
-      // If Ward (MCA)
-      if (SCOPE_MODE === 'ward') {
-          return OVERVIEW.wards.some(w => w.id === item.wardId && w.id === USER.ward);
-      }
-      
-      return false;
+      // For everyone else, check if the stream code exists in the OVERVIEW streams array
+      // OVERVIEW.streams is already scoped to the user's county/constituency/ward!
+      return OVERVIEW.streams.some(s => s.code === item.streamCode);
   });
 
+  // If no streams found at all
   if (filtered.length === 0) {
-      grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon" style="color:#4A7C3A;background:rgba(165,207,131,0.2);"><i class="fas fa-shield-check"></i></div><div class="empty-title">No Streams Reported</div><div class="empty-sub">No results have been submitted for your area yet.</div></div>';
+      grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon" style="color:#4A7C3A;background:rgba(165,207,131,0.2);"><i class="fas fa-shield-check"></i></div><div class="empty-title">No Streams Found</div><div class="empty-sub">No results have been submitted yet.</div></div>';
       return;
   }
 
   var html = '';
   
-  // 2. Draw the Cards based on the Drill Level
+  // 2. Draw cards based on the current Drill Level
   if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') {
+      // Group by Constituency
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.constId]) {
-              // Find the name from the OVERVIEW object
               var cName = OVERVIEW.consts.find(c=>c.id===f.constId)?.name || f.constId;
               grouped[f.constId] = { name: cName, items: [] };
           }
@@ -2654,6 +2635,7 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'ward') {
+      // Group by Ward
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.wardId]) {
@@ -2682,6 +2664,7 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'stream') {
+      // Show Streams
       filtered.forEach(f => {
           var color = f.hasAnomaly ? '#C4453A' : (!f.hasForm ? '#b8860b' : '#4A7C3A');
           var status = f.hasAnomaly ? 'MATH ANOMALY' : (!f.hasForm ? 'MISSING FORM' : 'CLEAN');
@@ -2701,7 +2684,7 @@ function renderWarRoom() {
   }
 
   grid.innerHTML = html;
-                                      }
+            }
 
               
   // START
