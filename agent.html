@@ -444,6 +444,82 @@ body {
     box-shadow: 0 0 0 0 rgba(255, 59, 48, 0);
   }
 }
+    /* NEW TURNOUT DASHBOARD STYLES */
+.turnout-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(21, 145, 220, 0.15);
+  box-shadow: 0 4px 12px rgba(21, 145, 220, 0.05);
+}
+.turnout-header {
+  font-size: 11px;
+  font-weight: 800;
+  color: #1591DC;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.turnout-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.turnout-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.turnout-item label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #6B7C93;
+  text-transform: uppercase;
+}
+.turnout-input {
+  width: 100%;
+  padding: 10px 8px;
+  border: 2px solid #E2E8F0;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+  color: #0F172A;
+  background: #F8FAFC;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  transition: all 0.2s ease;
+}
+.turnout-input:focus {
+  outline: none;
+  border-color: #1591DC;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(21, 145, 220, 0.15);
+}
+.turnout-input.error {
+  border-color: #C4453A;
+  color: #C4453A;
+  background: rgba(196, 69, 58, 0.05);
+}
+.valid-box {
+  background: rgba(165, 207, 131, 0.12);
+  border-radius: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(126, 174, 92, 0.2);
+  justify-content: center;
+}
+.valid-box label { color: #4A7C3A !important; }
+.turnout-valid-num {
+  font-size: 20px;
+  font-weight: 900;
+  color: #4A7C3A;
+  text-align: center;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  line-height: 1.2;
+  }
   </style>
 </head>
 <body>
@@ -513,16 +589,37 @@ body {
       <div class="sub-header-sub" id="entrySub">—</div>
     </div>
   </div>
-  <div class="entry-form" id="entryForm">
-    <div class="entry-hint">
-      <i class="fas fa-info-circle"></i>
-      <span>Enter votes for each candidate. Tap outside the keyboard when done. Numbers are saved as a draft automatically.</span>
+<div class="entry-form" id="entryForm">
+    
+    <!-- NEW: THE TURNOUT CARD -->
+    <div class="turnout-card">
+      <div class="turnout-header">
+        <span><i class="fas fa-users"></i> STREAM TURNOUT</span>
+        <span id="entryRegVoters" style="font-size:11px; background:rgba(21,145,220,0.1); padding:2px 8px; border-radius:10px;">Reg: 0</span>
+      </div>
+      <div class="turnout-grid">
+        <div class="turnout-item">
+          <label>Total Cast</label>
+          <input type="number" inputmode="numeric" id="entryTotalCast" class="turnout-input" placeholder="0" oninput="calculateTurnout()">
+        </div>
+        <div class="turnout-item">
+          <label>Rejected</label>
+          <input type="number" inputmode="numeric" id="entryRejected" class="turnout-input" placeholder="0" oninput="calculateTurnout()">
+        </div>
+        <div class="turnout-item valid-box">
+          <label>Valid Votes</label>
+          <div id="entryValidVotes" class="turnout-valid-num">0</div>
+        </div>
+      </div>
     </div>
-    <div class="draft-pill" id="draftPill">
+
+    <!-- Keep the draft pill below the turnout -->
+    <div class="draft-pill" id="draftPill" style="display:none; margin-bottom: 12px;">
       <i class="fas fa-history"></i> Draft restored
     </div>
+    
     <div id="candidateEntryList"></div>
-  </div>
+</div>
   <div class="entry-footer">
     <div class="entry-total">
       <span class="entry-total-label">Total Votes</span>
@@ -911,6 +1008,16 @@ async function goToEntry(streamCode, position) {
   document.getElementById('entrySub').textContent = currentStream.centreName + ' · STR ' + num;
   document.getElementById('candidateEntryList').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i>Loading candidates…</div>';
   showScreen('screenEntry');
+  // Fetch the registered voters for this stream
+try {
+  const { data: streamData } = await db.from('streams').select('registered_voters').eq('code', streamCode).single();
+  document.getElementById('entryRegVoters').textContent = 'Reg: ' + (streamData?.registered_voters || 0);
+} catch(e) { console.warn("Could not load registered voters", e); }
+
+// Clear previous turnout inputs
+document.getElementById('entryTotalCast').value = '';
+document.getElementById('entryRejected').value = '';
+document.getElementById('entryValidVotes').textContent = '0';
 
   try {
     // 1. Get candidates for this position
@@ -995,16 +1102,74 @@ function onVoteInput(input) {
   draftSaveTimer = setTimeout(saveDraftFromForm, 400);
 }
 
+function calculateTurnout() {
+  var totalCast = parseInt(document.getElementById('entryTotalCast').value) || 0;
+  var rejected = parseInt(document.getElementById('entryRejected').value) || 0;
+  var registered = parseInt(document.getElementById('entryRegVoters').textContent.replace('Reg: ', '')) || 0;
+
+  var castInput = document.getElementById('entryTotalCast');
+  
+  // Flag if votes cast exceeds registered
+  if (totalCast > registered && registered > 0) {
+    castInput.classList.add('error');
+  } else {
+    castInput.classList.remove('error');
+  }
+
+  var valid = totalCast - rejected;
+  if (valid < 0) valid = 0;
+  document.getElementById('entryValidVotes').textContent = valid;
+  
+  updateEntryTotal();
+}
+
 function updateEntryTotal() {
   var inputs = document.querySelectorAll('#candidateEntryList .vote-input');
-  var filled = 0, total = 0;
-  inputs.forEach(inp => { if (inp.value.trim() !== '') { filled++; total += parseInt(inp.value, 10) || 0; } });
+  var candidateSum = 0;
+  var filled = 0;
   
+  inputs.forEach(inp => { 
+    if (inp.value.trim() !== '') { 
+      filled++; 
+      candidateSum += parseInt(inp.value, 10) || 0; 
+    } 
+  });
+  
+  var totalCast = parseInt(document.getElementById('entryTotalCast').value) || 0;
+  var rejected = parseInt(document.getElementById('entryRejected').value) || 0;
+  var validVotes = totalCast - rejected;
+  if (validVotes < 0) validVotes = 0;
+
   var totalEl = document.getElementById('entryTotal');
-  totalEl.textContent = total;
-  totalEl.className = 'entry-total-value' + (total > 700 || (filled < inputs.length && filled > 0) ? ' warn' : '');
+  totalEl.textContent = candidateSum; 
   
-  document.getElementById('submitBtn').disabled = (filled !== inputs.length || total === 0 || total > 700);
+  var submitBtn = document.getElementById('submitBtn');
+  var mathMatches = (candidateSum === validVotes);
+  var allFieldsFilled = (filled === inputs.length);
+  
+  // Allow submit IF:
+  // 1. The math matches perfectly AND all candidate fields are filled
+  // OR
+  // 2. The math DOES NOT match (anomaly) but all candidate fields are filled (Force Submit)
+  if (allFieldsFilled && totalCast > 0) {
+    submitBtn.disabled = false;
+    
+    if (mathMatches) {
+      submitBtn.innerHTML = '<i class="fas fa-lock"></i> Submit & Lock';
+      submitBtn.style.background = 'linear-gradient(135deg, #1591DC 0%, #0F7BC0 100%)';
+      totalEl.style.color = '#4A7C3A';
+    } else {
+      // Anomaly Detected - Turn button Red
+      submitBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Submit as Anomaly';
+      submitBtn.style.background = '#C4453A';
+      totalEl.style.color = '#C4453A';
+    }
+  } else {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-lock"></i> Submit & Lock';
+    submitBtn.style.background = '#CBD5E1';
+    totalEl.style.color = '#0F172A';
+  }
 }
 
 // ================================================================
@@ -1063,8 +1228,14 @@ async function submitNow() {
   var streamCode = currentStream.code;
   var position = currentPosition;
   var payload = collectVotes();
+  var totalCast = parseInt(document.getElementById('entryTotalCast').value) || 0;
+  var rejected = parseInt(document.getElementById('entryRejected').value) || 0;
+  
+  // Calculate math for the warning
+  var candidateSum = payload.reduce((sum, v) => sum + v.votes, 0);
+  var validVotes = totalCast - rejected;
+  var isAnomaly = (candidateSum !== validVotes);
 
-  // We will try up to 5 times to beat a poor network
   let maxRetries = 5;
   let success = false;
   let attempt = 0;
@@ -1076,32 +1247,31 @@ async function submitNow() {
       : `<i class="fas fa-sync-alt fa-spin"></i> Retrying (${attempt}/${maxRetries})…`;
 
     try {
-      // 1. Attempt to send to Supabase
+      // Pass the new parameters to the RPC
       const { data, error } = await db.rpc('submit_election_results', {
         p_stream_code: streamCode,
         p_position: position,
-        p_votes: payload
+        p_votes: payload,
+        p_total_cast: totalCast,
+        p_rejected: rejected
       });
 
       if (error) throw error;
 
       if (!data.success) {
-        // If the database says "Already submitted", we handle it gracefully
         if (data.message.includes('already submitted')) {
           toast('These votes are already locked.', 'info');
-          goToPositions(streamCode); // Kick them back to the menu
+          goToPositions(streamCode);
           return;
         }
         throw new Error(data.message);
       }
 
-      // If we reach here, it was successful!
       success = true;
 
     } catch (err) {
       console.warn(`Attempt ${attempt} failed:`, err.message);
       
-      // If it's the last attempt, stop and show error
       if (attempt >= maxRetries) {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-lock"></i> Submit & Lock';
@@ -1109,7 +1279,6 @@ async function submitNow() {
         return;
       }
       
-      // Wait 3 seconds before retrying (to let the network catch up)
       toast('Network unstable. Retrying securely...', 'info');
       await new Promise(r => setTimeout(r, 3000));
     }
@@ -1120,7 +1289,6 @@ async function submitNow() {
     clearDraft(streamCode, position);
     STATUSES[streamCode][position] = { status: 'submitted' };
 
-    // Update the UI to show a massive success state
     btn.innerHTML = '<i class="fas fa-check-circle"></i> Votes Locked';
     btn.style.background = 'var(--primary)';
     btn.style.color = 'var(--text)';
@@ -1129,11 +1297,8 @@ async function submitNow() {
     document.getElementById('successSub').textContent = 'Data securely locked. Please upload the form.';
     document.getElementById('successOverlay').classList.add('active');
 
-    // Move to photo upload after 2 seconds
     setTimeout(() => {
       document.getElementById('successOverlay').classList.remove('active');
-      
-      // Reset button for the next position
       btn.style.background = '';
       btn.style.color = '';
       
@@ -1142,7 +1307,8 @@ async function submitNow() {
       }, 300);
     }, 2000);
   }
-}
+ }
+
 function advanceAfterSubmit(streamCode, position) {
   var statuses = STATUSES[streamCode] || {};
   var next = POSITIONS.find(p => p !== position && statuses[p]?.status !== 'submitted');
