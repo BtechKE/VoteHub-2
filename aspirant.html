@@ -2591,22 +2591,30 @@ async function loadWarRoom() {
 function renderWarRoom() {
   var grid = document.getElementById('warRoomGrid');
   
-  // 1. Filter data based on the aspirant's locked scope
+  // 1. Filter data using the exact same maps your Results tab uses
   var filtered = WAR_DATA.filter(function(item) {
-      // If they are a Governor (County scope), show all streams in their county
-      if (SCOPE_MODE === 'county') return item.countyId === USER.county;
+      // If National, show everything
+      if (SCOPE_MODE === 'national') return true;
       
-      // If they are an MP (Constituency scope)
-      if (SCOPE_MODE === 'constituency') return item.constId === USER.constituency;
+      // If County (Governor/Senator/Women Rep), check if the constituency belongs to this county
+      if (SCOPE_MODE === 'county') {
+          // OVERVIEW.consts contains ONLY the constituencies for this aspirant's county
+          return OVERVIEW.consts.some(c => c.id === item.constId);
+      }
       
-      // If they are an MCA (Ward scope)
-      if (SCOPE_MODE === 'ward') return item.wardId === USER.ward;
+      // If Constituency (MP)
+      if (SCOPE_MODE === 'constituency') {
+          return OVERVIEW.consts.some(c => c.id === item.constId && c.id === USER.constituency);
+      }
       
-      // If National (President)
-      return true;
+      // If Ward (MCA)
+      if (SCOPE_MODE === 'ward') {
+          return OVERVIEW.wards.some(w => w.id === item.wardId && w.id === USER.ward);
+      }
+      
+      return false;
   });
 
-  // If there are truly no streams in the database for this scope
   if (filtered.length === 0) {
       grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-icon" style="color:#4A7C3A;background:rgba(165,207,131,0.2);"><i class="fas fa-shield-check"></i></div><div class="empty-title">No Streams Reported</div><div class="empty-sub">No results have been submitted for your area yet.</div></div>';
       return;
@@ -2614,12 +2622,12 @@ function renderWarRoom() {
 
   var html = '';
   
-  // 2. Draw the Cards
+  // 2. Draw the Cards based on the Drill Level
   if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') {
-      // Group by Constituency
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.constId]) {
+              // Find the name from the OVERVIEW object
               var cName = OVERVIEW.consts.find(c=>c.id===f.constId)?.name || f.constId;
               grouped[f.constId] = { name: cName, items: [] };
           }
@@ -2646,7 +2654,6 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'ward') {
-      // Group by Ward
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.wardId]) {
@@ -2675,7 +2682,6 @@ function renderWarRoom() {
           </div>`;
       }
   } else if (WAR_DRILL_LEVEL === 'stream') {
-      // Show Streams
       filtered.forEach(f => {
           var color = f.hasAnomaly ? '#C4453A' : (!f.hasForm ? '#b8860b' : '#4A7C3A');
           var status = f.hasAnomaly ? 'MATH ANOMALY' : (!f.hasForm ? 'MISSING FORM' : 'CLEAN');
@@ -2695,7 +2701,8 @@ function renderWarRoom() {
   }
 
   grid.innerHTML = html;
-}
+                                      }
+
               
   // START
 init();
