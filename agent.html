@@ -1268,11 +1268,14 @@ async function submitNow() {
       }
 
       success = true;
-
-    } catch (err) {
-      console.warn(`Attempt ${attempt} failed:`, err.message);
-      
-      if (attempt >= maxRetries) {
+} catch (err) {
+  console.warn(`Attempt ${attempt} failed:`, err.message);
+  
+  alert("DATABASE ERROR: " + err.message); // <--- ADD THIS LINE
+  
+  // If it's the last attempt, stop and show error
+  if (attempt >= maxRetries) {
+    
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-lock"></i> Submit & Lock';
         toast('Network too weak. Move to a better spot and try again.', 'error');
