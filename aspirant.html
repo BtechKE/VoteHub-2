@@ -2521,12 +2521,11 @@ window.addEventListener('click', resetIdleTimer, true);
 
 // Start the timer immediately when the page loads
 resetIdleTimer();
-
-// ================================================================
-//  WAR ROOM LOGIC (CORRECTED HIERARCHY)
+  // ================================================================
+//  WAR ROOM LOGIC (FINAL FIXED HIERARCHY)
 // ================================================================
 var WAR_DATA = null;
-var WAR_DRILL_LEVEL = 'constituency'; // Always start at constituency for Governor
+var WAR_DRILL_LEVEL = 'constituency'; // Always starts at constituency for Governor
 var WAR_DRILL_CONST = '';
 var WAR_DRILL_WARD = '';
 var WAR_DRILL_CENTRE = '';
@@ -2552,7 +2551,7 @@ async function loadWarRoom() {
     var anomalies = [];
     var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
 
-    // Walk down the tree perfectly
+    // Tree walk: Stream -> Centre -> Ward -> Constituency
     (OVERVIEW.streams || []).forEach(s => {
       var centre = centreMap[s.centre_id];
       var ward = centre ? wardMap[centre.ward_id] : null;
@@ -2598,7 +2597,7 @@ async function loadWarRoom() {
     WAR_DATA = anomalies;
     
     // Set starting level based on user scope
-    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'constituency'; // Actually counties for national, but this works for Governor
+    if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'constituency'; 
     else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
     else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
     else WAR_DRILL_LEVEL = 'centre';
@@ -2631,7 +2630,7 @@ function renderWarRoom() {
   }
   bc.innerHTML = bcHtml;
 
-  // 2. Filter Data based on the exact level
+  // 2. Filter Data exactly by the level
   var filtered = WAR_DATA.filter(function(item) {
       if (WAR_DRILL_LEVEL === 'constituency') return true; 
       if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
@@ -2648,6 +2647,8 @@ function renderWarRoom() {
   var html = '';
   
   // 3. Render Cards
+  
+  // LEVEL 1: CONSTITUENCIES
   if (WAR_DRILL_LEVEL === 'constituency') {
       var grouped = {};
       filtered.forEach(f => { 
@@ -2682,7 +2683,45 @@ function renderWarRoom() {
           </div>`;
       }
   } 
+  
+  // LEVEL 2: WARDS
   else if (WAR_DRILL_LEVEL === 'ward') {
+      var grouped = {};
+      filtered.forEach(f => { 
+          if (!grouped[f.wardId]) {
+              var wName = OVERVIEW.wards.find(w=>w.id===f.wardId)?.name || 'Ward';
+              grouped[f.wardId] = { name: wName, items: [] };
+          }
+          grouped[f.wardId].items.push(f);
+      });
+
+      for (var id in grouped) {
+          var g = grouped[id];
+          var badCount = g.items.filter(i => i.status === 'anomaly').length;
+          var missCount = g.items.filter(i => i.status === 'no-form').length;
+          var silentCount = g.items.filter(i => i.status === 'silent').length;
+          var cleanCount = g.items.filter(i => i.status === 'clean').length;
+          
+          var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
+          var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
+          
+          html += `<div class="card" onclick="drillWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
+            <div class="card-head">
+              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Ward</div></div>
+              <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
+            </div>
+             <div style="font-size:12px; color:var(--slate); margin-top:8px;">
+              ${badCount > 0 ? `<strong style="color:#C4453A;">${badCount} Anomalies</strong><br>` : ''}
+              ${missCount > 0 ? `<strong style="color:#b8860b;">${missCount} Missing Forms</strong><br>` : ''}
+              ${silentCount > 0 ? `<strong style="color:#6B7C93;">${silentCount} Silent</strong><br>` : ''}
+              ${cleanCount > 0 ? `<span style="color:#4A7C3A;">${cleanCount} Clean</span>` : ''}
+            </div>
+          </div>`;
+      }
+  } 
+  
+  // LEVEL 3: CENTRES
+  else if (WAR_DRILL_LEVEL === 'centre') {
       var grouped = {};
       filtered.forEach(f => { 
           if (!grouped[f.centreId]) {
@@ -2702,7 +2741,7 @@ function renderWarRoom() {
           var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
           var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="drillWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
+          html += `<div class="card" onclick="drillWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
             <div class="card-head">
               <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Polling Centre</div></div>
               <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
@@ -2716,7 +2755,9 @@ function renderWarRoom() {
           </div>`;
       }
   } 
-  else if (WAR_DRILL_LEVEL === 'centre') {
+  
+  // LEVEL 4: STREAMS
+  else if (WAR_DRILL_LEVEL === 'stream') {
       filtered.forEach(f => {
           var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
           var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN'));
@@ -2805,11 +2846,7 @@ function openWarRoomStream(streamCode) {
 
     sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">${esc(streamCode)}</div><div class="sheet-sub">Stream Details</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>${content}`;
     bg.classList.add('active');
-                                     }
-  
-
-
-
+  }
   // START
 init();
 </script>
