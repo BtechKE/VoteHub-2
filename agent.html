@@ -1328,20 +1328,19 @@ function advanceAfterSubmit(streamCode, position) {
 async function goToReadonly(streamCode, position) {
   var stream = STREAMS.find(s => s.code === streamCode);
   
-  // FIX: Use the passed streamCode and position safely
   var hasForm = FORMS[streamCode] && FORMS[streamCode][position];
   var localPreview = localStorage.getItem('form_preview_' + streamCode + '_' + position);
   
   var formHtml = '';
   if (hasForm || localPreview) {
-  var imgSrc = localPreview || ''; 
-  formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
-    <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
-    <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
-  </div>
-  <button class="btn" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px; background: var(--primary) !important; color: var(--text) !important; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);" onclick="openUploadModal('${streamCode}', '${position}')">
-  <i class="fas fa-sync-alt"></i> Replace Photo
-</button>`;
+    var imgSrc = localPreview || ''; 
+    formHtml = `<div class="form-thumbnail-wrap" onclick="viewAgentForm('${streamCode}', '${position}')">
+      <img id="formThumb_${streamCode}_${position}" src="${imgSrc}" alt="Form" onerror="this.style.display='none'">
+      <div class="form-thumbnail-overlay"><i class="fas fa-search-plus"></i> View Form</div>
+    </div>
+    <button class="btn" style="width: 100%; margin-top: 8px; font-size: 13px; padding: 10px; background: var(--primary) !important; color: var(--text) !important; font-weight: 800; border: none; box-shadow: 0 4px 12px rgba(165, 207, 131, 0.3);" onclick="openUploadModal('${streamCode}', '${position}')">
+    <i class="fas fa-sync-alt"></i> Replace Photo
+  </button>`;
   
   if (!localPreview && hasForm) {
     db.storage.from('form-photos').createSignedUrl(streamCode + '_' + position.replace(/\s+/g, '') + '.jpg', 600).then(({data}) => {
@@ -1366,8 +1365,15 @@ async function goToReadonly(streamCode, position) {
   showScreen('screenReadonly');
 
   try {
+    // 1. Fetch results AND the joined candidate data
     const { data, error } = await db.from('results')
-      .select('votes, submitted_by, created_at, candidates(name, party, photo_url)')
+      .select(`
+        votes, 
+        submitted_by, 
+        created_at, 
+        candidate_code,
+        candidates ( name, party, photo_url )
+      `)
       .eq('stream_code', streamCode).eq('position', position);
 
     if (error) throw error;
@@ -1383,19 +1389,13 @@ async function goToReadonly(streamCode, position) {
       '<div class="readonly-info-row"><i class="fas fa-lock"></i> Locked</div>' +
     '</div>';
     
-    // NEW: We manually link the result to the candidate using currentCandidates
-var candsMap = {};
-currentCandidates.forEach(c => candsMap[c.code] = c);
-
-data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
-  var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-  
-  // Look up the candidate in our map using the candidate_code
-  var candInfo = candsMap[r.candidate_code] || {};
-  
-  var candName = candInfo.name || 'Unknown';
-  var candParty = candInfo.party || '';
-  var rawPhoto = candInfo.photo_url || '';
+    data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
+      var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+      
+      // 2. Safely extract the joined candidate data
+      var candName = r.candidates ? r.candidates.name : 'Unknown Candidate';
+      var candParty = r.candidates ? r.candidates.party : 'No Party';
+      var rawPhoto = r.candidates ? r.candidates.photo_url : '';
       var initial = candName.charAt(0).toUpperCase();
       var photoUrl = normalizeImageUrl(rawPhoto);
       
