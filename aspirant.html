@@ -2523,13 +2523,13 @@ window.addEventListener('click', resetIdleTimer, true);
 resetIdleTimer();
 
 // ================================================================
-//  WAR ROOM LOGIC (FIXED WITH BREADCRUMBS)
+//  WAR ROOM LOGIC (FULL HIERARCHY)
 // ================================================================
 var WAR_DATA = null;
-var WAR_DRILL_LEVEL = 'national';
-var WAR_DRILL_COUNTY = '';
+var WAR_DRILL_LEVEL = 'constituency';
 var WAR_DRILL_CONST = '';
 var WAR_DRILL_WARD = '';
+var WAR_DRILL_CENTRE = '';
 
 async function loadWarRoom() {
   document.getElementById('warRoomGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning database…</div>';
@@ -2565,6 +2565,7 @@ async function loadWarRoom() {
           streamCode: s.code, 
           constId: ward.constituency_id, 
           wardId: ward.id, 
+          centreId: centre.id, // NEW: Added Centre ID
           status: 'silent', 
           hasAnomaly: false, hasForm: false, cast: 0, rejected: 0, valid: 0, registered: s.registered_voters || 0
         });
@@ -2580,6 +2581,7 @@ async function loadWarRoom() {
           streamCode: t.stream_code, 
           constId: ward.constituency_id,
           wardId: ward.id,
+          centreId: centre.id, // NEW: Added Centre ID
           status: isAnomaly ? 'anomaly' : (!hasForm ? 'no-form' : 'clean'), 
           hasAnomaly: isAnomaly, hasForm: hasForm, 
           cast: t.total_cast, rejected: t.rejected, valid: t.valid_votes, registered: t.registered_voters
@@ -2597,7 +2599,7 @@ async function loadWarRoom() {
     if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'county';
     else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
     else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
-    else WAR_DRILL_LEVEL = 'stream';
+    else WAR_DRILL_LEVEL = 'centre';
 
     renderWarRoom();
   } catch (err) {
@@ -2612,13 +2614,18 @@ function renderWarRoom() {
   
   // 1. Render Breadcrumbs
   var bcHtml = `<button class="bc-seg ${WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county' ? 'current' : ''}" onclick="resetWarRoom()">All Constituencies</button>`;
+  
   if (WAR_DRILL_CONST) {
       var cName = OVERVIEW.consts.find(c=>c.id===WAR_DRILL_CONST)?.name || 'Constituency';
       bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg ${WAR_DRILL_LEVEL === 'ward' ? 'current' : ''}" onclick="drillWarRoom('ward', '${WAR_DRILL_CONST}', '${esc(cName)}')">${esc(cName)}</button>`;
   }
   if (WAR_DRILL_WARD) {
       var wName = OVERVIEW.wards.find(w=>w.id===WAR_DRILL_WARD)?.name || 'Ward';
-      bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg current">${esc(wName)}</button>`;
+      bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg ${WAR_DRILL_LEVEL === 'centre' ? 'current' : ''}" onclick="drillWarRoom('centre', '${WAR_DRILL_WARD}', '${esc(wName)}')">${esc(wName)}</button>`;
+  }
+  if (WAR_DRILL_CENTRE) {
+      var cenName = OVERVIEW.centres.find(c=>c.id===WAR_DRILL_CENTRE)?.name || 'Centre';
+      bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg current">${esc(cenName)}</button>`;
   }
   bc.innerHTML = bcHtml;
 
@@ -2626,7 +2633,8 @@ function renderWarRoom() {
   var filtered = WAR_DATA.filter(function(item) {
       if (WAR_DRILL_LEVEL === 'constituency' || WAR_DRILL_LEVEL === 'county') return true; 
       if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
-      if (WAR_DRILL_LEVEL === 'stream') return item.wardId === WAR_DRILL_WARD;
+      if (WAR_DRILL_LEVEL === 'centre') return item.wardId === WAR_DRILL_WARD;
+      if (WAR_DRILL_LEVEL === 'stream') return item.centreId === WAR_DRILL_CENTRE;
       return true;
   });
 
@@ -2671,14 +2679,16 @@ function renderWarRoom() {
             </div>
           </div>`;
       }
-  } else if (WAR_DRILL_LEVEL === 'ward') {
+  } 
+  else if (WAR_DRILL_LEVEL === 'ward') {
+      // Group by CENTRE now
       var grouped = {};
       filtered.forEach(f => { 
-          if (!grouped[f.wardId]) {
-              var wName = OVERVIEW.wards.find(w=>w.id===f.wardId)?.name || 'Ward';
-              grouped[f.wardId] = { name: wName, items: [] };
+          if (!grouped[f.centreId]) {
+              var cenName = OVERVIEW.centres.find(c=>c.id===f.centreId)?.name || 'Centre';
+              grouped[f.centreId] = { name: cenName, items: [] };
           }
-          grouped[f.wardId].items.push(f);
+          grouped[f.centreId].items.push(f);
       });
 
       for (var id in grouped) {
@@ -2691,9 +2701,9 @@ function renderWarRoom() {
           var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
           var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="drillWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
+          html += `<div class="card" onclick="drillWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
             <div class="card-head">
-              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Ward</div></div>
+              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Polling Centre</div></div>
               <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
             </div>
              <div style="font-size:12px; color:var(--slate); margin-top:8px;">
@@ -2704,7 +2714,9 @@ function renderWarRoom() {
             </div>
           </div>`;
       }
-  } else if (WAR_DRILL_LEVEL === 'stream') {
+  } 
+  else if (WAR_DRILL_LEVEL === 'centre') {
+      // Show the actual STREAMS in this Centre
       filtered.forEach(f => {
           var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
           var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN'));
@@ -2728,9 +2740,9 @@ function renderWarRoom() {
 }
 
 function drillWarRoom(level, id, name) {
-    if (level === 'constituency') { WAR_DRILL_COUNTY = id; WAR_DRILL_LEVEL = 'constituency'; }
-    if (level === 'ward') { WAR_DRILL_CONST = id; WAR_DRILL_LEVEL = 'ward'; }
-    if (level === 'stream') { WAR_DRILL_WARD = id; WAR_DRILL_LEVEL = 'stream'; }
+    if (level === 'constituency') { WAR_DRILL_CONST = id; WAR_DRILL_LEVEL = 'constituency'; }
+    if (level === 'ward') { WAR_DRILL_WARD = id; WAR_DRILL_LEVEL = 'ward'; }
+    if (level === 'centre') { WAR_DRILL_CENTRE = id; WAR_DRILL_LEVEL = 'centre'; }
     renderWarRoom();
 }
 
@@ -2738,22 +2750,51 @@ function resetWarRoom() {
     WAR_DRILL_LEVEL = 'constituency';
     WAR_DRILL_CONST = '';
     WAR_DRILL_WARD = '';
+    WAR_DRILL_CENTRE = '';
     renderWarRoom();
 }
 
 function openWarRoomStream(streamCode) {
-    // Placeholder: Opens the bottom sheet for silent streams
+    var item = WAR_DATA.find(x => x.streamCode === streamCode);
+    if (!item) return;
+
     var sheet = document.getElementById('sheetContent');
     var bg = document.getElementById('sheetBg');
     
-    sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">${esc(streamCode)}</div><div class="sheet-sub">Stream Details</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>
-    <div style="padding: 20px; text-align: center; color: var(--slate);">
-        <i class="fas fa-ghost" style="font-size: 40px; color: #6B7C93; margin-bottom: 10px;"></i>
-        <h3>No results submitted yet</h3>
-        <p>This stream has not reported. You can monitor this in the Live Tracker.</p>
-    </div>`;
+    var content = '';
+    
+    if (item.status === 'silent') {
+        content = `<div style="padding: 20px; text-align: center; color: var(--slate);">
+            <i class="fas fa-ghost" style="font-size: 40px; color: #6B7C93; margin-bottom: 10px;"></i>
+            <h3>No results submitted yet</h3>
+            <p>This stream has not reported. You can monitor this in the Live Tracker.</p>
+        </div>`;
+    } else {
+        var isAnomaly = item.status === 'anomaly';
+        var missingForm = item.status === 'no-form' || !item.hasForm;
+        
+        content = `
+        <div class="pip-result-info">
+            <div class="row"><i class="fas fa-users user"></i> Registered Voters: <strong>${item.registered}</strong></div>
+            <div class="row"><i class="fas fa-vote-yea clock"></i> Total Cast: <strong>${item.cast}</strong></div>
+            <div class="row"><i class="fas fa-ban lock"></i> Rejected: <strong>${item.rejected}</strong></div>
+            <div class="row" style="border-top:1px dashed #ccc; padding-top:8px; margin-top:8px;">
+                <i class="fas fa-check-circle user"></i> Valid Votes: <strong>${item.valid}</strong>
+            </div>
+        </div>
+        
+        ${isAnomaly ? `<div class="tracker-alert"><i class="fas fa-triangle-exclamation"></i><div><strong>Math Anomaly Detected!</strong><br>Candidate votes do not match valid votes, or cast > registered.</div></div>` : ''}
+        
+        ${missingForm ? `<div style="margin-top: 16px; padding: 12px; background: rgba(184, 134, 11, 0.08); border: 1px solid rgba(184, 134, 11, 0.2); border-radius: 12px; text-align: center; color: #b8860b; font-size: 12.5px; font-weight: 600;">
+            <i class="fas fa-exclamation-triangle"></i> Statutory form not uploaded yet.
+        </div>` : `<div style="margin-top: 16px; text-align: center; color: var(--success); font-weight: 700; font-size: 13px;"><i class="fas fa-check-circle"></i> Form 34A Verified</div>`}
+        `;
+    }
+
+    sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">${esc(streamCode)}</div><div class="sheet-sub">Stream Details</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div>${content}`;
     bg.classList.add('active');
-}
+      }
+
   // START
 init();
 </script>
