@@ -1383,11 +1383,19 @@ async function goToReadonly(streamCode, position) {
       '<div class="readonly-info-row"><i class="fas fa-lock"></i> Locked</div>' +
     '</div>';
     
-    data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
-      var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
-      var candName = r.candidates ? r.candidates.name : 'Unknown';
-      var candParty = r.candidates ? r.candidates.party : '';
-      var rawPhoto = r.candidates ? r.candidates.photo_url : '';
+    // NEW: We manually link the result to the candidate using currentCandidates
+var candsMap = {};
+currentCandidates.forEach(c => candsMap[c.code] = c);
+
+data.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
+  var rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+  
+  // Look up the candidate in our map using the candidate_code
+  var candInfo = candsMap[r.candidate_code] || {};
+  
+  var candName = candInfo.name || 'Unknown';
+  var candParty = candInfo.party || '';
+  var rawPhoto = candInfo.photo_url || '';
       var initial = candName.charAt(0).toUpperCase();
       var photoUrl = normalizeImageUrl(rawPhoto);
       
