@@ -2529,15 +2529,16 @@ var WAR_DRILL_LEVEL = 'constituency'; // Always starts at constituency for Gover
 var WAR_DRILL_CONST = '';
 var WAR_DRILL_WARD = '';
 var WAR_DRILL_CENTRE = '';
-
 async function loadWarRoom() {
   document.getElementById('warRoomGrid').innerHTML = '<div class="load" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning database…</div>';
   
   try {
-    const { data: turnout, error } = await db.from('stream_turnout').select('*');
+    // 1. Fetch ONLY the turnout data for this specific position
+    const { data: turnout, error } = await db.from('stream_turnout').select('*').eq('position', VIEW_POS);
     if (error) throw error;
 
-    const { data: forms } = await db.from('form_photos').select('stream_code');
+    // 2. Fetch ONLY the form photos for this specific position
+    const { data: forms } = await db.from('form_photos').select('stream_code').eq('position', VIEW_POS);
     var formSet = new Set((forms || []).map(f => f.stream_code));
 
     var reportedMap = {};
@@ -2551,7 +2552,6 @@ async function loadWarRoom() {
     var anomalies = [];
     var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
 
-    // Tree walk: Stream -> Centre -> Ward -> Constituency
     (OVERVIEW.streams || []).forEach(s => {
       var centre = centreMap[s.centre_id];
       var ward = centre ? wardMap[centre.ward_id] : null;
@@ -2596,7 +2596,6 @@ async function loadWarRoom() {
 
     WAR_DATA = anomalies;
     
-    // Set starting level based on user scope
     if (SCOPE_MODE === 'national') WAR_DRILL_LEVEL = 'constituency'; 
     else if (SCOPE_MODE === 'county') WAR_DRILL_LEVEL = 'constituency';
     else if (SCOPE_MODE === 'constituency') WAR_DRILL_LEVEL = 'ward';
@@ -2756,7 +2755,7 @@ function renderWarRoom() {
       }
   } 
   
-  // LEVEL 4: STREAMS
+  // LEVEL 4: STREAMS (WITH THE NEW READABLE GRID)
   else if (WAR_DRILL_LEVEL === 'stream') {
       filtered.forEach(f => {
           var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
@@ -2765,14 +2764,15 @@ function renderWarRoom() {
           
           html += `<div class="card" onclick="openWarRoomStream('${f.streamCode}')" style="border-left: 4px solid ${color};">
             <div class="card-head">
-              <div><div class="card-name">${esc(f.streamCode)}</div><div class="card-sub">${statusText}</div></div>
-              <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
+              <div><div class="card-name">${esc(f.streamCode)}</div><div class="card-sub" style="color:${color}; font-weight:700;">${statusText}</div></div>
+              <div style="color:${color}; font-size:22px;"><i class="fas ${icon}"></i></div>
             </div>
-            ${f.status !== 'silent' ? `<div style="font-size:12px; color:var(--slate); margin-top:8px; display:flex; justify-content:space-between;">
-                <span>Cast: <strong>${f.cast}</strong></span>
-                <span>Valid: <strong>${f.valid}</strong></span>
-                <span>Reg: <strong>${f.registered}</strong></span>
-            </div>` : '<div style="font-size:12px; color:#6B7C93; margin-top:8px; font-style:italic;">Agent has not submitted any results yet.</div>'}
+            ${f.status !== 'silent' ? `
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:12px; background:rgba(0,0,0,0.02); padding:10px; border-radius:8px; text-align:center;">
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Cast</div><div style="font-size:16px; font-weight:800; color:var(--ink);">${f.cast}</div></div>
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Valid</div><div style="font-size:16px; font-weight:800; color:var(--green-dark);">${f.valid}</div></div>
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Reg</div><div style="font-size:16px; font-weight:800; color:var(--blue);">${f.registered}</div></div>
+            </div>` : '<div style="font-size:12px; color:#6B7C93; margin-top:12px; font-style:italic; text-align:center; padding:10px;">Agent has not submitted results yet.</div>'}
           </div>`;
       });
   }
