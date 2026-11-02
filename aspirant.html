@@ -1736,13 +1736,32 @@ function getScopedLeaderboard() {
 }
 
 // Is there an actual "race" to render at the current drill scope for this position?
+// Is there an actual "race" to render at the current drill scope for this position?
 function isRaceScopeActive() {
-  if (SCOPE_MODE !== 'national') return true;           // county/constituency/ward aspirants unaffected
-  const pos = OVERVIEW ? OVERVIEW.viewingPosition : VIEW_POS;
-  if (pos === 'President') return true;                 // national race — always valid
-  if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') return !!DRILL_COUNTY_ID;
-  if (pos === 'MP')  return !!DRILL_CONST_ID;
-  if (pos === 'MCA') return !!DRILL_WARD;
+  if (!OVERVIEW) return false;
+  const pos = OVERVIEW.viewingPosition;
+  
+  if (pos === 'President') return true; // National race — always valid
+  
+  // County-wide positions
+  if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
+      if (SCOPE_MODE === 'county') return true; // Governor locked to county
+      if (SCOPE_MODE === 'national') return !!DRILL_COUNTY_ID; // National must pick a county
+      return true; // If MP/MCA logs in, they still belong to a county, so show it
+  }
+  
+  // Constituency-wide position
+  if (pos === 'MP') {
+      if (SCOPE_MODE === 'constituency') return true; // MP locked to their constituency
+      return !!DRILL_CONST_ID; // Governor/National must drill down to a constituency
+  }
+  
+  // Ward-wide position
+  if (pos === 'MCA') {
+      if (SCOPE_MODE === 'ward') return true; // MCA locked to their ward
+      return !!DRILL_WARD; // Gov/MP/National must drill down to a ward
+  }
+  
   return false;
 }
 
@@ -1792,48 +1811,63 @@ function renderBoard() {
   const el   = document.getElementById('board');
   const head = document.getElementById('boardSectionHead');
 
-  // --- 1. Hide entirely if there's no valid race at this drill level ---
-  if (!isRaceScopeActive()) {
-    if (el)   el.style.display   = 'none';
-    if (head) head.style.display = 'none';
-    return;
-  }
-  if (el)   el.style.display   = '';
+// --- 1. Handle empty state if there's no valid race at this drill level ---
+if (!isRaceScopeActive()) {
   if (head) head.style.display = '';
-
-  // --- 2. Build scoped candidate list ---
-  const racePool = getRaceCandidates();
-  if (!racePool.length) {
-    el.innerHTML = '<div class="empty">No candidates configured for this race.</div>';
-    return;
-  }
-
-  const votesMap = getVotesForCurrentDrill();
-  const scoped = racePool
-    .map(c => ({ ...c, votes: votesMap[c.code] || 0 }))
-    .sort((a, b) => b.votes - a.votes);
-
-  const total = scoped.reduce((s, c) => s + c.votes, 0);
-
-  // --- 3. Update the sub-heading text to reflect the scope ---
+  if (el) el.style.display = '';
+  
+  // Dynamic Subtitle for Empty State
   const subEl = document.getElementById('boardSub');
+  const pos = OVERVIEW.viewingPosition;
   if (subEl) {
-    if (DRILL_LEVEL === 'county') {
-      subEl.textContent = 'Candidates ranked nationally';
-    } else if (DRILL_LEVEL === 'constituency') {
-      if (SCOPE_MODE === 'national') {
-        subEl.textContent = 'Candidates ranked in ' + (DRILL_COUNTY_NAME || 'this county');
-      } else {
-        subEl.textContent = 'Candidates ranked in this county';
-      }
-    } else if (DRILL_LEVEL === 'ward') {
-      subEl.textContent = 'Candidates ranked in ' + (DRILL_CONST_NAME || 'this constituency');
-    } else if (DRILL_LEVEL === 'centre') {
-      subEl.textContent = 'Candidates ranked in ' + (DRILL_WARD_NAME || 'this ward');
-    } else if (DRILL_LEVEL === 'stream') {
-      subEl.textContent = 'Candidates ranked in ' + (DRILL_CENTRE_NAME || 'this centre');
-    }
+      if (pos === 'MP') subEl.textContent = 'Select a constituency to view the MP race';
+      else if (pos === 'MCA') subEl.textContent = 'Select a ward to view the MCA race';
   }
+
+  el.innerHTML = `<div class="empty" style="padding: 40px 20px; background: #FFFFFF; border: 1px dashed var(--border-strong); border-radius: var(--radius);">
+      <div class="empty-icon" style="color: var(--blue); background: var(--blue-soft);"><i class="fas fa-hand-pointer"></i></div>
+      <div class="empty-title">Select a ${pos === 'MP' ? 'Constituency' : 'Ward'}</div>
+      <div class="empty-sub">Click on the cards in the grid above to see the specific candidates for this ${pos} race.</div>
+  </div>`;
+  return;
+}
+
+// Make sure it's visible if the race is active
+if (el)   el.style.display   = '';
+if (head) head.style.display = '';
+
+// --- 2. Build scoped candidate list ---
+const racePool = getRaceCandidates();
+if (!racePool.length) {
+  el.innerHTML = '<div class="empty">No candidates configured for this race.</div>';
+  return;
+}
+
+const votesMap = getVotesForCurrentDrill();
+const scoped = racePool
+  .map(c => ({ ...c, votes: votesMap[c.code] || 0 }))
+  .sort((a, b) => b.votes - a.votes);
+
+const total = scoped.reduce((s, c) => s + c.votes, 0);
+
+// --- 3. Update the sub-heading text to reflect the scope dynamically ---
+const subEl = document.getElementById('boardSub');
+const pos = OVERVIEW.viewingPosition;
+if (subEl) {
+  if (pos === 'President') subEl.textContent = 'All candidates ranked nationally';
+  else if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
+      if (DRILL_LEVEL === 'constituency' && SCOPE_MODE === 'national') subEl.textContent = 'Candidates ranked in ' + (DRILL_COUNTY_NAME || 'this county');
+      else subEl.textContent = 'Candidates ranked in this county';
+  }
+  else if (pos === 'MP') {
+      if (DRILL_LEVEL === 'ward') subEl.textContent = 'Candidates ranked in ' + (DRILL_CONST_NAME || 'this constituency');
+      else if (DRILL_LEVEL === 'centre' || DRILL_LEVEL === 'stream') subEl.textContent = 'Candidates ranked in this constituency';
+  }
+  else if (pos === 'MCA') {
+      if (DRILL_LEVEL === 'centre') subEl.textContent = 'Candidates ranked in ' + (DRILL_WARD_NAME || 'this ward');
+      else if (DRILL_LEVEL === 'stream') subEl.textContent = 'Candidates ranked in this ward';
+  }
+}
   // --- 4. Render ---
   el.innerHTML = scoped.map((c, idx) => {
     const pct    = total > 0 ? (c.votes / total * 100) : 0;
