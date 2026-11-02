@@ -958,24 +958,29 @@ async function loadOverview(silent) {
     }
 
     // 2. Fetch Candidates & Results
-    // 2. Fetch Candidates & Results
 let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS).order('code');
 
-// SURGICAL FIX: Filter based on the specific position, not just the scope
 if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
     if (VIEW_POS === 'Governor' || VIEW_POS === 'Senator' || VIEW_POS === 'Women Rep') {
-        // County-wide positions use the county_id
-        candQuery = candQuery.eq('county_id', USER.county);
+        // If the user is an MP, their USER.county is null. 
+        // We must find the county ID from their constituency.
+        let targetCounty = USER.county;
+        if (!targetCounty && SCOPE_MODE === 'constituency' && consts.length > 0) {
+            targetCounty = consts[0].county_id;
+        }
+        candQuery = candQuery.eq('county_id', targetCounty);
+        
     } else if (VIEW_POS === 'MP') {
-        // MP uses constituency_id. We filter using the constituencies we already fetched.
+        // Filter MPs by the constituency(ies) the user is allowed to see
         const constIds = (consts || []).map(c => c.id);
         if (constIds.length) candQuery = candQuery.in('constituency_id', constIds);
-        else candQuery = candQuery.eq('constituency_id', 'NONE'); // Safe fallback
+        else candQuery = candQuery.eq('constituency_id', 'NONE'); 
+        
     } else if (VIEW_POS === 'MCA') {
-        // MCA uses ward_id. We filter using the wards we already fetched.
+        // Filter MCAs by the ward(s) the user is allowed to see
         const wardIds = (wardsData || []).map(w => w.id);
         if (wardIds.length) candQuery = candQuery.in('ward_id', wardIds);
-        else candQuery = candQuery.eq('ward_id', 'NONE'); // Safe fallback
+        else candQuery = candQuery.eq('ward_id', 'NONE'); 
     }
 }
     const cands = await fetchAll(() => candQuery);
