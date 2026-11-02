@@ -1469,8 +1469,15 @@ function renderHero() {
       }
   }
   else if (DRILL_LEVEL === 'ward') { 
-      scopedVotes = OVERVIEW.votesByConst[DRILL_CONST_ID] || {}; 
-      scopeLabel = DRILL_CONST_NAME; 
+    // Fallback for MP viewing county-wide positions
+    var targetConst = DRILL_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+    var targetConstName = DRILL_CONST_NAME;
+    if (!targetConstName && SCOPE_MODE === 'constituency') {
+        var cObj = OVERVIEW.consts.find(c => c.id === targetConst);
+        if (cObj) targetConstName = cObj.name;
+    }
+    scopedVotes = OVERVIEW.votesByConst[targetConst] || {}; 
+    scopeLabel = targetConstName || 'Constituency'; 
   }
   else if (DRILL_LEVEL === 'centre') { 
       scopedVotes = OVERVIEW.votesByWard[DRILL_WARD] || {}; 
@@ -1601,11 +1608,13 @@ function renderDrillGrid() {
   }
 
   if (DRILL_LEVEL === 'ward') {
-    var myWards = OVERVIEW.wards ? OVERVIEW.wards.filter(w => w.constituency_id === DRILL_CONST_ID) : [];
-    el.innerHTML = myWards.map(w => 
-      buildCard(w, OVERVIEW.votesByWard, 'Ward', `drillDown('centre', '${w.id}', '${w.name}')`)
-    ).join('');
-    return;
+  // If user is locked to a constituency, use that. Otherwise use the drill ID.
+  var targetConstId = DRILL_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+  var myWards = OVERVIEW.wards ? OVERVIEW.wards.filter(w => w.constituency_id === targetConstId) : [];
+  el.innerHTML = myWards.map(w => 
+    buildCard(w, OVERVIEW.votesByWard, 'Ward', `drillDown('centre', '${w.id}', '${w.name}')`)
+  ).join('');
+  return;
   }
 
   if (DRILL_LEVEL === 'centre') {
