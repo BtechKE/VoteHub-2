@@ -2605,18 +2605,47 @@ body::after {
       </select>
     </div>
 
-    <div class="form-group" style="margin-top: 16px;">
-      <label>Filter Issues (Check all that apply)</label>
-      <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border);">
-        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
-          <input type="checkbox" id="warRepAnomaly" checked style="width:auto; margin:0;"> <span style="color:#C4453A;">🚨 Math Anomalies</span>
+      <div class="form-group" style="margin-top: 16px;">
+      <label>Filter Issues</label>
+      
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+        
+        <!-- Anomalies -->
+        <label style="display:flex; align-items:center; gap:12px; cursor:pointer; padding:12px; border-radius:10px; border:1.5px solid rgba(196, 69, 58, 0.2); background:rgba(196, 69, 58, 0.04); transition:all 0.2s;">
+          <input type="checkbox" id="warRepAnomaly" checked style="width:18px; height:18px; accent-color:#C4453A; cursor:pointer;">
+          <div style="width:32px; height:32px; border-radius:50%; background:rgba(196, 69, 58, 0.15); color:#C4453A; display:flex; align-items:center; justify-content:center; font-size:14px;">
+            <i class="fas fa-triangle-exclamation"></i>
+          </div>
+          <div>
+            <div style="font-weight:800; font-size:13px; color:#C4453A;">Math Anomalies</div>
+            <div style="font-size:11px; color:var(--text-muted);">Impossible numbers or math errors</div>
+          </div>
         </label>
-        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
-          <input type="checkbox" id="warRepMissing" checked style="width:auto; margin:0;"> <span style="color:#b8860b;">📸 Missing Forms</span>
+
+        <!-- Missing Forms -->
+        <label style="display:flex; align-items:center; gap:12px; cursor:pointer; padding:12px; border-radius:10px; border:1.5px solid rgba(184, 134, 11, 0.2); background:rgba(184, 134, 11, 0.04); transition:all 0.2s;">
+          <input type="checkbox" id="warRepMissing" checked style="width:18px; height:18px; accent-color:#b8860b; cursor:pointer;">
+          <div style="width:32px; height:32px; border-radius:50%; background:rgba(184, 134, 11, 0.15); color:#b8860b; display:flex; align-items:center; justify-content:center; font-size:14px;">
+            <i class="fas fa-file-circle-xmark"></i>
+          </div>
+          <div>
+            <div style="font-weight:800; font-size:13px; color:#b8860b;">Missing Forms</div>
+            <div style="font-size:11px; color:var(--text-muted);">Statutory form not uploaded</div>
+          </div>
         </label>
-        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
-          <input type="checkbox" id="warRepSilent" checked style="width:auto; margin:0;"> <span style="color:#6B7C93;">⚪ Silent Streams</span>
+
+        <!-- Silent Streams -->
+        <label style="display:flex; align-items:center; gap:12px; cursor:pointer; padding:12px; border-radius:10px; border:1.5px solid rgba(107, 124, 147, 0.2); background:rgba(107, 124, 147, 0.04); transition:all 0.2s;">
+          <input type="checkbox" id="warRepSilent" checked style="width:18px; height:18px; accent-color:#6B7C93; cursor:pointer;">
+          <div style="width:32px; height:32px; border-radius:50%; background:rgba(107, 124, 147, 0.15); color:#6B7C93; display:flex; align-items:center; justify-content:center; font-size:14px;">
+            <i class="fas fa-ghost"></i>
+          </div>
+          <div>
+            <div style="font-weight:800; font-size:13px; color:#6B7C93;">Silent Streams</div>
+            <div style="font-size:11px; color:var(--text-muted);">Agent has not reported yet</div>
+          </div>
         </label>
+
       </div>
     </div>
 
