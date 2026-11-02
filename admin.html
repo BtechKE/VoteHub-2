@@ -2207,6 +2207,9 @@ body::after {
     <button class="tab" data-tab="tracker" onclick="switchTab('tracker')">
       <i class="fas fa-satellite-dish"></i> Live Tracker <span class="badge" id="badgeTracker">0</span>
     </button>
+    <button class="tab" data-tab="warroom" onclick="switchTab('warroom')">
+      <i class="fas fa-shield-halved"></i> War Room <span class="badge" id="badgeWarRoom" style="background: var(--danger); color: white;">0</span>
+    </button>
     <button class="tab" data-tab="locations" onclick="switchTab('locations')">
       <i class="fas fa-map"></i> Locations
     </button>
@@ -2295,6 +2298,62 @@ body::after {
       <div id="trackerList"><div class="loading-inline"><i class="fas fa-spinner"></i>Loading…</div></div>
     </div>
   </div>
+
+  <!-- ============================================================
+       ADMIN WAR ROOM
+  ============================================================ -->
+  <div class="section" id="sec-warroom">
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-title" style="color: var(--danger);"><i class="fas fa-shield-halved"></i> War Room</div>
+          <div class="section-desc">Live anomaly and form verification monitoring</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAdminWarRoom(true)">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="stats" style="margin-bottom: 20px;">
+        <div class="stat" style="border-top-color: var(--success);">
+          <div class="stat-icon" style="color: var(--success);"><i class="fas fa-check-circle"></i></div>
+          <div class="stat-num" id="warGreenCount">0</div>
+          <div class="stat-label">Clean Streams</div>
+        </div>
+        <div class="stat" style="border-top-color: var(--warning);">
+          <div class="stat-icon" style="color: var(--warning);"><i class="fas fa-file-circle-xmark"></i></div>
+          <div class="stat-num" id="warYellowCount">0</div>
+          <div class="stat-label">Missing Forms</div>
+        </div>
+        <div class="stat" style="border-top-color: var(--danger);">
+          <div class="stat-icon" style="color: var(--danger);"><i class="fas fa-triangle-exclamation"></i></div>
+          <div class="stat-num" id="warRedCount">0</div>
+          <div class="stat-label">Math Anomalies</div>
+        </div>
+        <div class="stat" style="border-top-color: #6B7C93;">
+          <div class="stat-icon" style="color: #6B7C93;"><i class="fas fa-ghost"></i></div>
+          <div class="stat-num" id="warGreyCount">0</div>
+          <div class="stat-label">Silent Streams</div>
+        </div>
+      </div>
+
+      <!-- Search Bar for Admin (The Senator Call solution) -->
+      <div class="form-group" style="margin-bottom: 20px;">
+        <div style="position: relative;">
+          <i class="fas fa-search" style="position: absolute; left: 16px; top: 14px; color: var(--text-muted);"></i>
+          <input type="text" id="warRoomSearch" placeholder="Search centre or stream (e.g. Misikhu)..." oninput="searchWarRoom(this.value)" style="padding-left: 44px; height: 46px; border-radius: 12px; font-size: 14px;">
+        </div>
+      </div>
+
+      <div class="breadcrumb" id="warRoomBreadcrumb" style="margin-bottom: 16px;"></div>
+      
+      <div class="grid" id="warRoomGrid">
+        <div class="loading-inline"><i class="fas fa-spinner"></i>Scanning database…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============================================================
        LOCATIONS (Counties & Constituencies)
   ============================================================ -->
@@ -2753,6 +2812,7 @@ function switchTab(name) {
 
   if (name === 'results') { MCA_SUMMARY = null; loadAdminResults(); }
   if (name === 'tracker') { loadSubmissionMatrix(); }
+  if (name === 'warroom') { loadAdminWarRoom(); }
   if (name === 'locations') { renderLocations(); }
 }
 
@@ -5620,6 +5680,123 @@ async function resetDevice(kind, id) {
     toast('Devices reset successfully.', 'success');
     loadAllData();
   });
+}
+// ================================================================
+//  ADMIN WAR ROOM LOGIC
+// ================================================================
+var ADMIN_WAR_DATA = [];
+var ADMIN_WAR_DRILL_LEVEL = 'constituency';
+var ADMIN_WAR_CONST = '';
+var ADMIN_WAR_WARD = '';
+var ADMIN_WAR_CENTRE = '';
+
+async function loadAdminWarRoom(silent) {
+  if (!silent) document.getElementById('warRoomGrid').innerHTML = '<div class="loading-inline" style="grid-column:1/-1;"><i class="fas fa-spinner"></i>Scanning all positions…</div>';
+  
+  try {
+    var streamCodes = STREAMS.map(s => s.code);
+    if (!streamCodes.length) {
+       document.getElementById('warRoomGrid').innerHTML = '<div class="empty">No streams found for this county.</div>';
+       return;
+    }
+
+    // 1. Fetch ALL turnout data for this county
+    const { data: turnout, error } = await db.from('stream_turnout').select('*').in('stream_code', streamCodes);
+    if (error) throw error;
+
+    // 2. Fetch ALL forms for this county
+    const { data: forms } = await db.from('form_photos').select('stream_code, position').in('stream_code', streamCodes);
+    
+    // Build maps for easy lookup
+    var turnoutMap = {}; // key: "streamCode_position"
+    (turnout || []).forEach(t => { turnoutMap[t.stream_code + '_' + t.position] = t; });
+
+    var formMap = {}; // key: "streamCode_position"
+    (forms || []).forEach(f => { formMap[f.stream_code + '_' + f.position] = true; });
+
+    var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
+    var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
+
+    var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
+    ADMIN_WAR_DATA = [];
+
+    // 3. The "Worst-Case" Aggregation Loop
+    STREAMS.forEach(s => {
+      var centre = centreMap[s.centre_id];
+      var ward = centre ? wardMap[centre.ward_id] : null;
+      if (!ward) return;
+
+      var hasAnomaly = false;
+      var hasMissingForm = false;
+      var hasClean = false;
+      var hasSilent = false;
+      var positionDetails = {};
+
+      // Check all 6 positions for this stream
+      POSITIONS.forEach(pos => {
+          var t = turnoutMap[s.code + '_' + pos];
+          var hasForm = formMap[s.code + '_' + pos];
+
+          if (!t) {
+              hasSilent = true;
+              positionDetails[pos] = { status: 'silent', cast: 0, valid: 0, hasForm: false };
+          } else {
+              if (t.has_anomaly) {
+                  hasAnomaly = true;
+                  positionDetails[pos] = { status: 'anomaly', cast: t.total_cast, valid: t.valid_votes, hasForm: hasForm };
+              } else if (!hasForm) {
+                  hasMissingForm = true;
+                  positionDetails[pos] = { status: 'no-form', cast: t.total_cast, valid: t.valid_votes, hasForm: false };
+              } else {
+                  hasClean = true;
+                  positionDetails[pos] = { status: 'clean', cast: t.total_cast, valid: t.valid_votes, hasForm: true };
+              }
+          }
+      });
+
+      // Determine overall stream status based on Worst-Case
+      var overallStatus = 'clean';
+      if (hasAnomaly) overallStatus = 'anomaly';
+      else if (hasMissingForm) overallStatus = 'no-form';
+      else if (hasSilent && !hasClean) overallStatus = 'silent';
+      else if (hasSilent && hasClean) overallStatus = 'no-form'; // If mixed silent/clean, treat as missing/pending
+
+      if (overallStatus === 'clean') cleanCount++;
+      else if (overallStatus === 'no-form') missingFormCount++;
+      else if (overallStatus === 'anomaly') anomalyCount++;
+      else silentCount++;
+
+      ADMIN_WAR_DATA.push({
+          streamCode: s.code,
+          constId: ward.constituency_id,
+          wardId: ward.id,
+          centreId: centre.id,
+          centreName: centre.name,
+          status: overallStatus,
+          details: positionDetails
+      });
+    });
+
+    // Update Summary Stats
+    document.getElementById('warGreenCount').textContent = cleanCount;
+    document.getElementById('warYellowCount').textContent = missingFormCount;
+    document.getElementById('warRedCount').textContent = anomalyCount;
+    document.getElementById('warGreyCount').textContent = silentCount;
+
+    // Reset drill level to top when refreshing
+    if (!silent) {
+        ADMIN_WAR_DRILL_LEVEL = 'constituency';
+        ADMIN_WAR_CONST = '';
+        ADMIN_WAR_WARD = '';
+        ADMIN_WAR_CENTRE = '';
+    }
+
+    renderAdminWarRoom();
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('warRoomGrid').innerHTML = '<div class="empty">Error loading War Room data.</div>';
+  }
 }
 </script>
 </body>
