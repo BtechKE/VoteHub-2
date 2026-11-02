@@ -2314,12 +2314,17 @@ body::after {
         </button>
       </div>
 
-      <!-- Summary Cards -->
-      <div class="stats" style="margin-bottom: 20px;">
+           <!-- Summary Cards -->
+      <div class="stats" style="margin-bottom: 20px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
         <div class="stat" style="border-top-color: var(--success);">
           <div class="stat-icon" style="color: var(--success);"><i class="fas fa-check-circle"></i></div>
           <div class="stat-num" id="warGreenCount">0</div>
           <div class="stat-label">Clean Streams</div>
+        </div>
+        <div class="stat" style="border-top-color: #1591DC;">
+          <div class="stat-icon" style="color: #1591DC;"><i class="fas fa-circle-half-stroke"></i></div>
+          <div class="stat-num" id="warPartialCount">0</div>
+          <div class="stat-label">In Progress</div>
         </div>
         <div class="stat" style="border-top-color: var(--warning);">
           <div class="stat-icon" style="color: var(--warning);"><i class="fas fa-file-circle-xmark"></i></div>
@@ -2337,7 +2342,6 @@ body::after {
           <div class="stat-label">Silent Streams</div>
         </div>
       </div>
-
       <!-- Search Bar for Admin (The Senator Call solution) -->
       <div class="form-group" style="margin-bottom: 20px;">
         <div style="position: relative;">
@@ -5700,27 +5704,23 @@ async function loadAdminWarRoom(silent) {
        return;
     }
 
-    // 1. Fetch ALL turnout data for this county
     const { data: turnout, error } = await db.from('stream_turnout').select('*').in('stream_code', streamCodes);
     if (error) throw error;
 
-    // 2. Fetch ALL forms for this county
     const { data: forms } = await db.from('form_photos').select('stream_code, position').in('stream_code', streamCodes);
     
-    // Build maps for easy lookup
-    var turnoutMap = {}; // key: "streamCode_position"
+    var turnoutMap = {};
     (turnout || []).forEach(t => { turnoutMap[t.stream_code + '_' + t.position] = t; });
 
-    var formMap = {}; // key: "streamCode_position"
+    var formMap = {};
     (forms || []).forEach(f => { formMap[f.stream_code + '_' + f.position] = true; });
 
     var centreMap = {}; CENTRES.forEach(c => centreMap[c.id] = c);
     var wardMap = {}; WARDS.forEach(w => wardMap[w.id] = w);
 
-    var cleanCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
+    var cleanCount = 0, partialCount = 0, missingFormCount = 0, anomalyCount = 0, silentCount = 0;
     ADMIN_WAR_DATA = [];
 
-    // 3. The "Worst-Case" Aggregation Loop
     STREAMS.forEach(s => {
       var centre = centreMap[s.centre_id];
       var ward = centre ? wardMap[centre.ward_id] : null;
@@ -5728,17 +5728,16 @@ async function loadAdminWarRoom(silent) {
 
       var hasAnomaly = false;
       var hasMissingForm = false;
-      var hasClean = false;
-      var hasSilent = false;
+      var submittedCount = 0;
       var positionDetails = {};
 
-      // Check all 6 positions for this stream
       POSITIONS.forEach(pos => {
           var t = turnoutMap[s.code + '_' + pos];
           var hasForm = formMap[s.code + '_' + pos];
 
+          if (t) submittedCount++; // Count how many positions have reported
+
           if (!t) {
-              hasSilent = true;
               positionDetails[pos] = { status: 'silent', cast: 0, valid: 0, hasForm: false };
           } else {
               if (t.has_anomaly) {
@@ -5748,20 +5747,25 @@ async function loadAdminWarRoom(silent) {
                   hasMissingForm = true;
                   positionDetails[pos] = { status: 'no-form', cast: t.total_cast, valid: t.valid_votes, hasForm: false };
               } else {
-                  hasClean = true;
                   positionDetails[pos] = { status: 'clean', cast: t.total_cast, valid: t.valid_votes, hasForm: true };
               }
           }
       });
 
-      // Determine overall stream status based on Worst-Case
-      var overallStatus = 'clean';
-      if (hasAnomaly) overallStatus = 'anomaly';
-      else if (hasMissingForm) overallStatus = 'no-form';
-      else if (hasSilent && !hasClean) overallStatus = 'silent';
-      else if (hasSilent && hasClean) overallStatus = 'no-form'; // If mixed silent/clean, treat as missing/pending
+      // --- THE CORRECTED LOGIC ---
+      var overallStatus = 'silent';
+      if (hasAnomaly) {
+          overallStatus = 'anomaly'; // Red overrides everything
+      } else if (hasMissingForm) {
+          overallStatus = 'no-form'; // Yellow overrides partial (missing evidence is critical)
+      } else if (submittedCount === POSITIONS.length) {
+          overallStatus = 'clean';   // All 6 in, all forms uploaded, no anomalies
+      } else if (submittedCount > 0) {
+          overallStatus = 'partial'; // Some in, no errors, just waiting on the rest (BLUE)
+      }
 
       if (overallStatus === 'clean') cleanCount++;
+      else if (overallStatus === 'partial') partialCount++;
       else if (overallStatus === 'no-form') missingFormCount++;
       else if (overallStatus === 'anomaly') anomalyCount++;
       else silentCount++;
@@ -5777,13 +5781,12 @@ async function loadAdminWarRoom(silent) {
       });
     });
 
-    // Update Summary Stats
     document.getElementById('warGreenCount').textContent = cleanCount;
+    document.getElementById('warPartialCount').textContent = partialCount;
     document.getElementById('warYellowCount').textContent = missingFormCount;
     document.getElementById('warRedCount').textContent = anomalyCount;
     document.getElementById('warGreyCount').textContent = silentCount;
 
-    // Reset drill level to top when refreshing
     if (!silent) {
         ADMIN_WAR_DRILL_LEVEL = 'constituency';
         ADMIN_WAR_CONST = '';
@@ -5810,23 +5813,18 @@ function renderAdminWarRoom() {
   // 1. Handle Search Mode
   if (ADMIN_WAR_SEARCH.length > 0) {
       bc.innerHTML = `<button class="bc-seg current" onclick="clearWarRoomSearch()">Search Results <i class="fas fa-times" style="margin-left:5px;"></i></button>`;
-      
       var filtered = ADMIN_WAR_DATA.filter(item => item.streamCode.toLowerCase().includes(ADMIN_WAR_SEARCH) || item.centreName.toLowerCase().includes(ADMIN_WAR_SEARCH));
       
       if (filtered.length === 0) {
           grid.innerHTML = '<div class="empty" style="grid-column:1/-1;"><div class="empty-title">No streams found</div></div>';
           return;
       }
-      
-      // Render a flat list of streams for search
-      var html = filtered.map(f => buildAdminStreamCard(f)).join('');
-      grid.innerHTML = html;
+      grid.innerHTML = filtered.map(f => buildAdminStreamCard(f)).join('');
       return;
   }
 
   // 2. Handle Standard Drill-Down
   var bcHtml = `<button class="bc-seg ${ADMIN_WAR_DRILL_LEVEL === 'constituency' ? 'current' : ''}" onclick="resetAdminWarRoom()">All Constituencies</button>`;
-  
   if (ADMIN_WAR_CONST) {
       var cName = CONSTITUENCIES.find(c=>c.id===ADMIN_WAR_CONST)?.name || 'Constituency';
       bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg ${ADMIN_WAR_DRILL_LEVEL === 'ward' ? 'current' : ''}" onclick="drillAdminWarRoom('ward', '${ADMIN_WAR_CONST}', '${esc(cName)}')">${esc(cName)}</button>`;
@@ -5841,7 +5839,6 @@ function renderAdminWarRoom() {
   }
   bc.innerHTML = bcHtml;
 
-  // Filter Data
   var filtered = ADMIN_WAR_DATA.filter(function(item) {
       if (ADMIN_WAR_DRILL_LEVEL === 'constituency') return true; 
       if (ADMIN_WAR_DRILL_LEVEL === 'ward') return item.constId === ADMIN_WAR_CONST;
@@ -5857,18 +5854,27 @@ function renderAdminWarRoom() {
 
   var html = '';
   
-  // HELPER: Reusable Stat Grid
-  function buildStats(badCount, missCount, silentCount, cleanCount) {
+  // HELPER: Reusable Stat Grid (Now includes Partial)
+  function buildStats(bad, miss, partial, silent, clean) {
       var statsHtml = '<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px;">';
-      if (badCount > 0) statsHtml += `<div style="background: rgba(196, 69, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #C4453A; line-height: 1;">${badCount}</div><div style="font-size: 9px; font-weight: 800; color: #C4453A; text-transform: uppercase; margin-top: 2px;">Anomaly</div></div>`;
-      if (missCount > 0) statsHtml += `<div style="background: rgba(184, 134, 11, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #b8860b; line-height: 1;">${missCount}</div><div style="font-size: 9px; font-weight: 800; color: #b8860b; text-transform: uppercase; margin-top: 2px;">No Form</div></div>`;
-      if (silentCount > 0) statsHtml += `<div style="background: rgba(107, 124, 147, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #6B7C93; line-height: 1;">${silentCount}</div><div style="font-size: 9px; font-weight: 800; color: #6B7C93; text-transform: uppercase; margin-top: 2px;">Silent</div></div>`;
-      if (cleanCount > 0) statsHtml += `<div style="background: rgba(74, 124, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #4A7C3A; line-height: 1;">${cleanCount}</div><div style="font-size: 9px; font-weight: 800; color: #4A7C3A; text-transform: uppercase; margin-top: 2px;">Clean</div></div>`;
+      if (bad > 0) statsHtml += `<div style="background: rgba(196, 69, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #C4453A; line-height: 1;">${bad}</div><div style="font-size: 9px; font-weight: 800; color: #C4453A; text-transform: uppercase; margin-top: 2px;">Anomaly</div></div>`;
+      if (miss > 0) statsHtml += `<div style="background: rgba(184, 134, 11, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #b8860b; line-height: 1;">${miss}</div><div style="font-size: 9px; font-weight: 800; color: #b8860b; text-transform: uppercase; margin-top: 2px;">No Form</div></div>`;
+      if (partial > 0) statsHtml += `<div style="background: rgba(21, 145, 220, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #1591DC; line-height: 1;">${partial}</div><div style="font-size: 9px; font-weight: 800; color: #1591DC; text-transform: uppercase; margin-top: 2px;">Partial</div></div>`;
+      if (silent > 0) statsHtml += `<div style="background: rgba(107, 124, 147, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #6B7C93; line-height: 1;">${silent}</div><div style="font-size: 9px; font-weight: 800; color: #6B7C93; text-transform: uppercase; margin-top: 2px;">Silent</div></div>`;
+      if (clean > 0) statsHtml += `<div style="background: rgba(74, 124, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #4A7C3A; line-height: 1;">${clean}</div><div style="font-size: 9px; font-weight: 800; color: #4A7C3A; text-transform: uppercase; margin-top: 2px;">Clean</div></div>`;
       statsHtml += '</div>';
       return statsHtml;
   }
 
-  // LEVEL 1: CONSTITUENCIES
+  // Helper for colors/icons
+  function getStatusStyle(bad, miss, partial, silent) {
+      if (bad > 0) return { color: '#C4453A', icon: 'fa-triangle-exclamation' };
+      if (miss > 0) return { color: '#b8860b', icon: 'fa-file-circle-xmark' };
+      if (partial > 0) return { color: '#1591DC', icon: 'fa-circle-half-stroke' };
+      if (silent > 0) return { color: '#6B7C93', icon: 'fa-ghost' };
+      return { color: '#4A7C3A', icon: 'fa-check-circle' };
+  }
+
   if (ADMIN_WAR_DRILL_LEVEL === 'constituency') {
       var grouped = {};
       filtered.forEach(f => { 
@@ -5881,25 +5887,23 @@ function renderAdminWarRoom() {
 
       for (var id in grouped) {
           var g = grouped[id];
-          var badCount = g.items.filter(i => i.status === 'anomaly').length;
-          var missCount = g.items.filter(i => i.status === 'no-form').length;
-          var silentCount = g.items.filter(i => i.status === 'silent').length;
-          var cleanCount = g.items.filter(i => i.status === 'clean').length;
+          var b = g.items.filter(i => i.status === 'anomaly').length;
+          var m = g.items.filter(i => i.status === 'no-form').length;
+          var p = g.items.filter(i => i.status === 'partial').length;
+          var s = g.items.filter(i => i.status === 'silent').length;
+          var c = g.items.filter(i => i.status === 'clean').length;
           
-          var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
-          var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
+          var style = getStatusStyle(b, m, p, s);
           
-          html += `<div class="card" onclick="drillAdminWarRoom('ward', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+          html += `<div class="card" onclick="drillAdminWarRoom('ward', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${style.color}; padding: 16px;">
             <div class="card-head" style="margin-bottom: 4px;">
               <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Constituency</div></div>
-              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
+              <div style="color:${style.color}; font-size:22px; background:${style.color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${style.icon}"></i></div>
             </div>
-            ${buildStats(badCount, missCount, silentCount, cleanCount)}
+            ${buildStats(b, m, p, s, c)}
           </div>`;
       }
   } 
-  
-  // LEVEL 2: WARDS
   else if (ADMIN_WAR_DRILL_LEVEL === 'ward') {
       var grouped = {};
       filtered.forEach(f => { 
@@ -5912,25 +5916,23 @@ function renderAdminWarRoom() {
 
       for (var id in grouped) {
           var g = grouped[id];
-          var badCount = g.items.filter(i => i.status === 'anomaly').length;
-          var missCount = g.items.filter(i => i.status === 'no-form').length;
-          var silentCount = g.items.filter(i => i.status === 'silent').length;
-          var cleanCount = g.items.filter(i => i.status === 'clean').length;
+          var b = g.items.filter(i => i.status === 'anomaly').length;
+          var m = g.items.filter(i => i.status === 'no-form').length;
+          var p = g.items.filter(i => i.status === 'partial').length;
+          var s = g.items.filter(i => i.status === 'silent').length;
+          var c = g.items.filter(i => i.status === 'clean').length;
           
-          var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
-          var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
+          var style = getStatusStyle(b, m, p, s);
           
-          html += `<div class="card" onclick="drillAdminWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+          html += `<div class="card" onclick="drillAdminWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${style.color}; padding: 16px;">
             <div class="card-head" style="margin-bottom: 4px;">
               <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Ward</div></div>
-              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
+              <div style="color:${style.color}; font-size:22px; background:${style.color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${style.icon}"></i></div>
             </div>
-            ${buildStats(badCount, missCount, silentCount, cleanCount)}
+            ${buildStats(b, m, p, s, c)}
           </div>`;
       }
   } 
-  
-  // LEVEL 3: CENTRES
   else if (ADMIN_WAR_DRILL_LEVEL === 'centre') {
       var grouped = {};
       filtered.forEach(f => { 
@@ -5943,25 +5945,23 @@ function renderAdminWarRoom() {
 
       for (var id in grouped) {
           var g = grouped[id];
-          var badCount = g.items.filter(i => i.status === 'anomaly').length;
-          var missCount = g.items.filter(i => i.status === 'no-form').length;
-          var silentCount = g.items.filter(i => i.status === 'silent').length;
-          var cleanCount = g.items.filter(i => i.status === 'clean').length;
+          var b = g.items.filter(i => i.status === 'anomaly').length;
+          var m = g.items.filter(i => i.status === 'no-form').length;
+          var p = g.items.filter(i => i.status === 'partial').length;
+          var s = g.items.filter(i => i.status === 'silent').length;
+          var c = g.items.filter(i => i.status === 'clean').length;
           
-          var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
-          var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
+          var style = getStatusStyle(b, m, p, s);
           
-          html += `<div class="card" onclick="drillAdminWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+          html += `<div class="card" onclick="drillAdminWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${style.color}; padding: 16px;">
             <div class="card-head" style="margin-bottom: 4px;">
               <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Polling Centre</div></div>
-              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
+              <div style="color:${style.color}; font-size:22px; background:${style.color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${style.icon}"></i></div>
             </div>
-            ${buildStats(badCount, missCount, silentCount, cleanCount)}
+            ${buildStats(b, m, p, s, c)}
           </div>`;
       }
   } 
-  
-  // LEVEL 4: STREAMS
   else if (ADMIN_WAR_DRILL_LEVEL === 'stream') {
       html = filtered.map(f => buildAdminStreamCard(f)).join('');
   }
@@ -5969,13 +5969,11 @@ function renderAdminWarRoom() {
   grid.innerHTML = html;
 }
 
-// HELPER: Build Stream Card (Used for Level 4 and Search)
 function buildAdminStreamCard(f) {
-    var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
-    var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN'));
-    var icon = f.status === 'anomaly' ? 'fa-triangle-exclamation' : (f.status === 'no-form' ? 'fa-file-circle-xmark' : (f.status === 'silent' ? 'fa-ghost' : 'fa-check-circle'));
+    var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'partial' ? '#1591DC' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A')));
+    var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'partial' ? 'IN PROGRESS' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN')));
+    var icon = f.status === 'anomaly' ? 'fa-triangle-exclamation' : (f.status === 'no-form' ? 'fa-file-circle-xmark' : (f.status === 'partial' ? 'fa-circle-half-stroke' : (f.status === 'silent' ? 'fa-ghost' : 'fa-check-circle')));
     
-    // Aggregate totals for the stream (across all positions)
     var totalCast = 0, totalValid = 0;
     Object.values(f.details).forEach(d => { totalCast += d.cast; totalValid += d.valid; });
 
@@ -5991,6 +5989,8 @@ function buildAdminStreamCard(f) {
       </div>` : '<div style="font-size:12px; color:#6B7C93; margin-top:12px; font-style:italic; text-align:center; padding:10px;">No positions reported.</div>'}
     </div>`;
 }
+// HELPER: Build Stream Card (Used for Level 4 and Search)
+
 
 function drillAdminWarRoom(level, id, name) {
     if (level === 'ward') { ADMIN_WAR_CONST = id; ADMIN_WAR_DRILL_LEVEL = 'ward'; ADMIN_WAR_WARD = ''; ADMIN_WAR_CENTRE = ''; }
