@@ -6040,8 +6040,12 @@ function openAdminWarRoomStream(streamCode) {
         var pText = d.status === 'anomaly' ? 'Math Anomaly' : (d.status === 'no-form' ? 'Missing Form' : (d.status === 'silent' ? 'Not Reported' : 'Clean & Verified'));
         var pIcon = d.status === 'anomaly' ? 'fa-triangle-exclamation' : (d.status === 'no-form' ? 'fa-file-circle-xmark' : (d.status === 'silent' ? 'fa-ghost' : 'fa-check-circle'));
         
+        // Make the row clickable ONLY if it's not silent
+        var clickAction = d.status !== 'silent' ? `onclick="openAdminPositionDetail('${streamCode}', '${pos}')"` : '';
+        var cursorStyle = d.status !== 'silent' ? 'cursor:pointer;' : 'cursor:default;';
+        
         html += `
-        <div class="result-row" style="margin-bottom:0; border-left:3px solid ${pColor}; padding:12px; cursor:default;">
+        <div class="result-row" style="margin-bottom:0; border-left:3px solid ${pColor}; padding:12px; ${cursorStyle}" ${clickAction}>
             <div style="color:${pColor}; font-size:18px; width:24px; text-align:center;"><i class="fas ${pIcon}"></i></div>
             <div class="result-info">
                 <div class="result-name" style="font-size:14px;">${pos}</div>
@@ -6051,7 +6055,8 @@ function openAdminWarRoomStream(streamCode) {
             <div style="text-align:right;">
                 <div style="font-size:14px; font-weight:800; color:var(--ink);">${d.cast} <span style="font-size:10px; font-weight:600; color:var(--slate);">CAST</span></div>
                 <div style="font-size:12px; font-weight:700; color:var(--green-dark);">${d.valid} <span style="font-size:10px; font-weight:600; color:var(--slate);">VALID</span></div>
-            </div>` : ''}
+            </div>
+            <i class="fas fa-chevron-right" style="color:var(--slate); font-size:12px; margin-left:8px;"></i>` : ''}
         </div>`;
     });
     
@@ -6059,6 +6064,112 @@ function openAdminWarRoomStream(streamCode) {
     
     sheet.innerHTML = html;
     bg.classList.add('active');
+}
+  // THE DETAILED POSITION VIEW (When Admin clicks a specific row)
+async function openAdminPositionDetail(streamCode, position) {
+    var sheet = document.getElementById('sheetContent');
+    
+    // Show loading state
+    sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">${esc(position)} · ${esc(streamCode)}</div><div class="sheet-sub">Loading details…</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="loading-inline"><i class="fas fa-spinner"></i>Fetching evidence…</div>`;
+
+    try {
+        // 1. Fetch the raw results for this stream and position
+        const { data: results, error: resErr } = await db.from('results')
+            .select('votes, submitted_by, created_at, candidate_code, total_votes_cast, rejected_votes')
+            .eq('stream_code', streamCode).eq('position', position);
+            
+        if (resErr) throw resErr;
+
+        // 2. Fetch the candidates for this position to get names/photos
+        const { data: allCands } = await db.from('candidates').select('code, name, party, photo_url').eq('position', position);
+        var candMap = {};
+        (allCands || []).forEach(c => { candMap[c.code] = c; });
+
+        // 3. Check if a form photo exists
+        const { data: formData } = await db.from('form_photos').select('photo_url').eq('stream_code', streamCode).eq('position', position).single();
+        var formPhotoUrl = '';
+        if (formData && formData.photo_url) {
+            const { data: signedData } = await db.storage.from('form-photos').createSignedUrl(formData.photo_url, 600);
+            if (signedData) formPhotoUrl = signedData.signedUrl;
+        }
+
+        // 4. Build the UI
+        var html = `<div class="sheet-head">
+            <div>
+                <button class="btn btn-sm btn-ghost" style="margin-bottom:8px; padding:4px 8px;" onclick="openAdminWarRoomStream('${streamCode}')"><i class="fas fa-arrow-left"></i> Back</button>
+                <div class="sheet-title">${esc(position)} Details</div>
+                <div class="sheet-sub">${esc(streamCode)}</div>
+            </div>
+            <button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button>
+        </div>`;
+
+        if (!results || results.length === 0) {
+            html += '<div class="empty"><div class="empty-title">No results submitted</div></div>';
+            sheet.innerHTML = html;
+            return;
+        }
+
+        var totalCast = results[0].total_votes_cast || 0;
+        var rejected = results[0].rejected_votes || 0;
+        var validVotes = totalCast - rejected;
+
+        // Math Summary Block
+        html += `<div class="pip-result-info">
+            <div class="row"><i class="fas fa-vote-yea clock"></i> Total Cast: <strong>${totalCast}</strong></div>
+            <div class="row"><i class="fas fa-ban lock"></i> Rejected: <strong>${rejected}</strong></div>
+            <div class="row" style="border-top:1px dashed #ccc; padding-top:8px; margin-top:8px;">
+                <i class="fas fa-check-circle user"></i> Valid Votes: <strong>${validVotes}</strong>
+            </div>
+        </div>`;
+
+        // Anomaly Warning
+        if (results[0].is_anomaly) {
+            html += `<div class="tracker-alert" style="margin-top:10px; margin-bottom:14px;"><i class="fas fa-triangle-exclamation"></i><div><strong>Math Anomaly!</strong><br>Candidate votes do not match valid votes.</div></div>`;
+        }
+
+        // Candidate List
+        html += `<div style="font-size:12px; font-weight:800; color:var(--slate); text-transform:uppercase; margin-bottom:8px;">Candidate Breakdown</div>`;
+        html += '<div class="board" style="border:none;">';
+        
+        results.sort((a,b) => b.votes - a.votes).forEach((r, idx) => {
+            var cInfo = candMap[r.candidate_code] || {};
+            var name = cInfo.name || 'Unknown';
+            var party = cInfo.party || '';
+            var photoUrl = normalizeImageUrl(cInfo.photo_url);
+            var initial = name.charAt(0).toUpperCase();
+            
+            var photoHtml = photoUrl ? `<img src="${photoUrl}" onerror="this.style.display='none';this.parentElement.textContent='${initial}'">` : initial;
+
+            html += `<div class="result-row" style="cursor:default;">
+                <div class="avatar-wrap ${photoUrl ? '' : 'no-photo'}" style="width:32px; height:32px; font-size:12px;">${photoHtml}</div>
+                <div class="result-info">
+                    <div class="result-name">${esc(name)}</div>
+                    <div class="result-party">${esc(party)}</div>
+                </div>
+                <div class="result-votes">${r.votes.toLocaleString()}</div>
+            </div>`;
+        });
+        html += '</div>';
+
+        // Form Photo Button
+        if (formPhotoUrl) {
+            html += `<div style="margin-top: 16px;">
+                <a href="${formPhotoUrl}" target="_blank" class="btn btn-primary" style="width:100%; text-decoration:none; padding:14px; border-radius:12px; font-weight:800; background:var(--primary) !important; color:var(--text) !important; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <i class="fas fa-file-image"></i> View Statutory Form
+                </a>
+            </div>`;
+        } else {
+            html += `<div style="margin-top: 16px; padding: 12px; background: rgba(184, 134, 11, 0.08); border: 1px solid rgba(184, 134, 11, 0.2); border-radius: 12px; text-align: center; color: #b8860b; font-size: 12.5px; font-weight: 600;">
+                <i class="fas fa-exclamation-triangle"></i> Statutory form not uploaded for this position.
+            </div>`;
+        }
+
+        sheet.innerHTML = html;
+
+    } catch (err) {
+        console.error(err);
+        sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">Error</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty">Could not load details.</div>`;
+    }
 }
 </script>
 </body>
