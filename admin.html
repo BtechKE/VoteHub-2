@@ -2309,9 +2309,14 @@ body::after {
           <div class="section-title" style="color: var(--danger);"><i class="fas fa-shield-halved"></i> War Room</div>
           <div class="section-desc">Live anomaly and form verification monitoring</div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadAdminWarRoom(true)">
-          <i class="fas fa-sync-alt"></i> Refresh
-        </button>
+            <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="openWarRoomReportModal()" style="color: var(--danger); border-color: rgba(196,69,58,0.3);">
+            <i class="fas fa-file-pdf"></i> Generate Audit Report
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="loadAdminWarRoom(true)">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
       </div>
 
            <!-- Summary Cards -->
@@ -2567,6 +2572,62 @@ body::after {
       </div>
     </div>
 </div><!-- /page -->
+  <!-- ============================================================
+     WAR ROOM REPORT MODAL
+============================================================ -->
+<div class="modal-bg" id="warRoomReportModal" onclick="if(event.target===this) closeWarRoomReportModal()">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">Generate Audit Report</div>
+        <div class="modal-sub">Export a filtered list of issues for the lawyers</div>
+      </div>
+      <button class="modal-close" onclick="closeWarRoomReportModal()"><i class="fas fa-times"></i></button>
+    </div>
+
+    <div class="form-group">
+      <label>Select Target Position</label>
+      <select id="warRepPos" class="form-control" style="width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--border-strong);">
+        <option value="All">All Positions (General Audit)</option>
+        <option value="President">President</option>
+        <option value="Governor">Governor</option>
+        <option value="Senator">Senator</option>
+        <option value="MP">MP</option>
+        <option value="Women Rep">Women Rep</option>
+        <option value="MCA">MCA</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Report Scope</label>
+      <select id="warRepScope" class="form-control" style="width:100%; padding:10px; border-radius:10px; border:1.5px solid var(--border-strong);">
+        <!-- Populated dynamically via JS -->
+      </select>
+    </div>
+
+    <div class="form-group" style="margin-top: 16px;">
+      <label>Filter Issues (Check all that apply)</label>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px; background:var(--bg); padding:12px; border-radius:10px; border:1px solid var(--border);">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
+          <input type="checkbox" id="warRepAnomaly" checked style="width:auto; margin:0;"> <span style="color:#C4453A;">🚨 Math Anomalies</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
+          <input type="checkbox" id="warRepMissing" checked style="width:auto; margin:0;"> <span style="color:#b8860b;">📸 Missing Forms</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-weight:600; cursor:pointer; font-size:13px;">
+          <input type="checkbox" id="warRepSilent" checked style="width:auto; margin:0;"> <span style="color:#6B7C93;">⚪ Silent Streams</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeWarRoomReportModal()">Cancel</button>
+      <button class="btn btn-danger" id="warRepGoBtn" onclick="generateWarRoomPDF()">
+        <i class="fas fa-file-pdf"></i> Download PDF
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- ============================================================
      EXPORT MODAL
@@ -6293,6 +6354,179 @@ async function openAdminPositionDetail(streamCode, position) {
         console.error(err);
         sheet.innerHTML = `<div class="sheet-head"><div><div class="sheet-title">Error</div></div><button class="sheet-close" onclick="closeSheet()"><i class="fas fa-xmark"></i></button></div><div class="empty">Could not load details.</div>`;
     }
+}
+  // ================================================================
+//  WAR ROOM AUDIT REPORT ENGINE
+// ================================================================
+function openWarRoomReportModal() {
+  var scopeSel = document.getElementById('warRepScope');
+  scopeSel.innerHTML = '';
+
+  var options = [];
+  // Always allow the whole county
+  options.push({ value: 'county', label: 'Entire County (' + (CONFIG.County || 'Current') + ')' });
+
+  // Add options based on current drill-down state
+  if (ADMIN_WAR_CONST) {
+    var cName = CONSTITUENCIES.find(c=>c.id===ADMIN_WAR_CONST)?.name || 'Constituency';
+    options.push({ value: 'constituency_' + ADMIN_WAR_CONST, label: cName + ' Constituency' });
+  }
+  if (ADMIN_WAR_WARD) {
+    var wName = WARDS.find(w=>w.id===ADMIN_WAR_WARD)?.name || 'Ward';
+    options.push({ value: 'ward_' + ADMIN_WAR_WARD, label: wName + ' Ward' });
+  }
+  if (ADMIN_WAR_CENTRE) {
+    var cenName = CENTRES.find(c=>c.id===ADMIN_WAR_CENTRE)?.name || 'Centre';
+    options.push({ value: 'centre_' + ADMIN_WAR_CENTRE, label: cenName + ' Centre' });
+  }
+
+  // Default to the most specific level the admin has clicked into
+  var defaultVal = 'county';
+  if (ADMIN_WAR_CENTRE) defaultVal = 'centre_' + ADMIN_WAR_CENTRE;
+  else if (ADMIN_WAR_WARD) defaultVal = 'ward_' + ADMIN_WAR_WARD;
+  else if (ADMIN_WAR_CONST) defaultVal = 'constituency_' + ADMIN_WAR_CONST;
+
+  scopeSel.innerHTML = options.map(o => `<option value="${o.value}" ${o.value === defaultVal ? 'selected' : ''}>${o.label}</option>`).join('');
+
+  document.getElementById('warRoomReportModal').classList.add('active');
+}
+
+function closeWarRoomReportModal() {
+  document.getElementById('warRoomReportModal').classList.remove('active');
+}
+
+function generateWarRoomPDF() {
+  var pos = document.getElementById('warRepPos').value;
+  var scope = document.getElementById('warRepScope').value;
+  var incAnomaly = document.getElementById('warRepAnomaly').checked;
+  var incMissing = document.getElementById('warRepMissing').checked;
+  var incSilent = document.getElementById('warRepSilent').checked;
+
+  if (!incAnomaly && !incMissing && !incSilent) {
+    return toast('Please select at least one issue type to filter.', 'error');
+  }
+
+  var btn = document.getElementById('warRepGoBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+
+  try {
+    // 1. Filter Data by Scope
+    var filteredData = ADMIN_WAR_DATA.filter(item => {
+      if (scope === 'county') return true;
+      if (scope.startsWith('constituency_')) return item.constId === scope.split('_')[1];
+      if (scope.startsWith('ward_')) return item.wardId === scope.split('_')[1];
+      if (scope.startsWith('centre_')) return item.centreId === scope.split('_')[1];
+      return true;
+    });
+
+    // 2. Filter by Position and Issue Type
+    var rows = [];
+    filteredData.forEach(stream => {
+      var issuesFound = [];
+      
+      POSITIONS.forEach(p => {
+        if (pos !== 'All' && p !== pos) return; // Skip if a specific position was selected
+
+        var d = stream.details[p];
+        if (d.status === 'anomaly' && incAnomaly) {
+          issuesFound.push(p + ': Math Anomaly');
+        } else if (d.status === 'no-form' && incMissing) {
+          issuesFound.push(p + ': Missing Form');
+        } else if (d.status === 'silent' && incSilent) {
+          issuesFound.push(p + ': Not Reported');
+        }
+      });
+
+      if (issuesFound.length > 0) {
+         var ward = WARDS.find(w=>w.id===stream.wardId)?.name || 'Unknown';
+         var centre = CENTRES.find(c=>c.id===stream.centreId)?.name || 'Unknown';
+         
+         var castStr = '-', validStr = '-';
+         if (pos !== 'All' && stream.details[pos].cast > 0) {
+             castStr = stream.details[pos].cast;
+             validStr = stream.details[pos].valid;
+         }
+
+         rows.push({
+             ward: ward,
+             centre: centre,
+             stream: stream.streamCode,
+             issues: issuesFound.join(', '),
+             cast: castStr,
+             valid: validStr
+         });
+      }
+    });
+
+    if (rows.length === 0) {
+      toast('No issues found matching the selected filters.', 'info');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
+      return;
+    }
+
+    // 3. Generate PDF
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    var pageW = 210, marginL = 14;
+    
+    var GREEN = [165, 207, 131], INK = [26, 26, 25], SLATE = [67, 86, 99];
+    
+    // Header
+    doc.setFillColor(INK[0], INK[1], INK[2]); doc.rect(0, 0, pageW, 25, 'F');
+    doc.setTextColor(GREEN[0], GREEN[1], GREEN[2]); doc.setFontSize(18); doc.setFont('helvetica', 'bold');
+    doc.text('TallyHub War Room Audit', marginL, 16);
+    
+    doc.setTextColor(255, 255, 255); doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+    doc.text('Generated: ' + new Date().toLocaleString(), pageW - marginL, 16, { align: 'right' });
+
+    // Summary Details
+    doc.setTextColor(INK[0], INK[1], INK[2]); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+    doc.text('Report Scope: ' + document.getElementById('warRepScope').options[document.getElementById('warRepScope').selectedIndex].text, marginL, 35);
+    doc.text('Target Position: ' + pos, marginL, 41);
+    
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+    doc.text(`Total Affected Streams: ${rows.length}`, marginL, 48);
+
+    // Table
+    var tableBody = rows.map(r => [r.ward, r.centre, r.stream, r.issues, r.cast, r.valid]);
+    
+    doc.autoTable({
+      startY: 55,
+      head: [['Ward', 'Polling Centre', 'Stream Code', 'Identified Issues', 'Cast', 'Valid']],
+      body: tableBody,
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 8, cellPadding: 3, textColor: INK, lineColor: [220, 220, 220], lineWidth: 0.1 },
+      headStyles: { fillColor: [196, 69, 58], textColor: 255, fontStyle: 'bold' },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 50 },
+        4: { cellWidth: 15, halign: 'right' },
+        5: { cellWidth: 15, halign: 'right' }
+      },
+      didParseCell: function(data) {
+        if (data.section === 'body' && data.column.index === 3) {
+          if (data.cell.raw.includes('Math Anomaly')) data.cell.styles.textColor = '#C4453A';
+          else if (data.cell.raw.includes('Missing Form')) data.cell.styles.textColor = '#b8860b';
+          else if (data.cell.raw.includes('Not Reported')) data.cell.styles.textColor = '#6B7C93';
+        }
+      }
+    });
+
+    doc.save('TallyHub-Audit-' + pos + '.pdf');
+    closeWarRoomReportModal();
+    toast('Audit Report downloaded.', 'success');
+
+  } catch (e) {
+    console.error(e);
+    toast('Error generating report: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-file-pdf"></i> Download PDF';
+  }
 }
 </script>
 </body>
