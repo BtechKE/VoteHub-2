@@ -2601,7 +2601,19 @@ body::after {
         <i class="fas fa-map-location-dot"></i> <span>MCA</span> <i class="fas fa-check export-check"></i>
       </button>
     </div>
-
+    <div class="form-group" id="exportConstWrap" style="display:none; margin-top: 15px;">
+      <label>Select Constituency</label>
+      <select id="exportConstId" class="form-control">
+        <option value="">— Select Constituency —</option>
+      </select>
+    </div>
+    
+    <div class="form-group" id="exportWardWrap" style="display:none; margin-top: 15px;">
+      <label>Select Ward</label>
+      <select id="exportWardId" class="form-control">
+        <option value="">— Select Ward —</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeExportModal()">Cancel</button>
       <button class="btn btn-primary" id="exportGoBtn" onclick="generatePDF()" disabled>
@@ -4972,8 +4984,16 @@ function openExportModal() {
   exportSelectedPos = null;
   document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.remove('active'); });
   document.getElementById('exportGoBtn').disabled = true;
+  
+  // Reset dropdowns
+  document.getElementById('exportConstWrap').style.display = 'none';
+  document.getElementById('exportWardWrap').style.display = 'none';
+  document.getElementById('exportConstId').value = '';
+  document.getElementById('exportWardId').value = '';
+
   document.getElementById('exportModal').classList.add('active');
 }
+
 
 function closeExportModal() {
   document.getElementById('exportModal').classList.remove('active');
@@ -4982,13 +5002,52 @@ function closeExportModal() {
 function selectExportPos(pos) {
   exportSelectedPos = pos;
   document.querySelectorAll('.export-opt').forEach(function (b) { b.classList.toggle('active', b.dataset.pos === pos); });
+  
+  // Handle Dropdown Visibility
+  var constWrap = document.getElementById('exportConstWrap');
+  var wardWrap = document.getElementById('exportWardWrap');
+  
+  if (pos === 'MP') {
+    constWrap.style.display = 'block';
+    wardWrap.style.display = 'none';
+    // Populate Constituencies
+    document.getElementById('exportConstId').innerHTML = '<option value="">— Select Constituency —</option>' + 
+      CONSTITUENCIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  } else if (pos === 'MCA') {
+    constWrap.style.display = 'block';
+    wardWrap.style.display = 'block';
+    // Populate Constituencies
+    document.getElementById('exportConstId').innerHTML = '<option value="">— Select Constituency —</option>' + 
+      CONSTITUENCIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    document.getElementById('exportWardId').innerHTML = '<option value="">— Select Constituency First —</option>';
+  } else {
+    constWrap.style.display = 'none';
+    wardWrap.style.display = 'none';
+  }
+  
   document.getElementById('exportGoBtn').disabled = false;
-}    
+}
+
+// Add this event listener in your script to handle Ward population when Constituency changes
+document.getElementById('exportConstId')?.addEventListener('change', function() {
+  var constId = this.value;
+  var wardSel = document.getElementById('exportWardId');
+  if (!constId) { wardSel.innerHTML = '<option value="">— Select Constituency First —</option>'; return; }
+  
+  var wards = WARDS.filter(w => w.constituency_id === constId);
+  wardSel.innerHTML = '<option value="">— Select Ward —</option>' + wards.map(w => `<option value="${w.id}">${w.name}</option>`).join('');
+});   
 async function generatePDF() {
   if (!exportSelectedPos) return;
   var pos = exportSelectedPos;
   var btn = document.getElementById('exportGoBtn');
   
+  var targetConstId = document.getElementById('exportConstId').value;
+  var targetWardId = document.getElementById('exportWardId').value;
+
+  if (pos === 'MP' && !targetConstId) return toast('Please select a Constituency for the MP.', 'error');
+  if (pos === 'MCA' && (!targetConstId || !targetWardId)) return toast('Please select a Constituency and Ward for the MCA.', 'error');
+
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
 
@@ -4997,6 +5056,7 @@ async function generatePDF() {
     let cands, resultsData, formsData, allStreams, allWards, allConsts, allCounties;
 
     if (isNational) {
+      // National scope: fetch everything
       const [ c, r, f, s, w, co, ct ] = await Promise.all([
         fetchAll(() => db.from('candidates').select('*').eq('position', pos).order('code')),
         fetchAll(() => db.from('results').select('stream_code, candidate_code, votes').eq('position', pos).order('stream_code')),
@@ -5008,14 +5068,30 @@ async function generatePDF() {
       ]);
       cands = c; resultsData = r; formsData = f; allStreams = s; allWards = w; allConsts = co; allCounties = ct;
     } else {
-      const streamCodes = STREAMS.map(s=>s.code);
+      // County/Constituency/Ward scope
+      var activeWards = WARDS;
+      var activeCentres = CENTRES;
+      
+      // Apply Pre-Filters for MP and MCA
+      if (pos === 'MP') {
+        activeWards = WARDS.filter(w => w.constituency_id === targetConstId);
+      } else if (pos === 'MCA') {
+        activeWards = WARDS.filter(w => w.id === targetWardId);
+      }
+
+      const streamCodes = STREAMS.filter(s => activeWards.some(w => w.id === s.ward_id)).map(s => s.code);
+      
       const [ c, r, f ] = await Promise.all([
         fetchAll(() => db.from('candidates').select('*').eq('position', pos).order('code')),
         fetchIn('results', 'stream_code, candidate_code, votes', 'stream_code', streamCodes, 'stream_code', q => q.eq('position', pos)),
         fetchIn('form_photos', 'stream_code', 'stream_code', streamCodes, 'stream_code', q => q.eq('position', pos))
       ]);
+      
       cands = c; resultsData = r; formsData = f; 
-      allStreams = STREAMS; allWards = WARDS; allConsts = CONSTITUENCIES; allCounties = COUNTIES.filter(c=>c.id===CURRENT_COUNTY);
+      allStreams = STREAMS.filter(s => activeWards.some(w => w.id === s.ward_id)); 
+      allWards = activeWards; 
+      allConsts = CONSTITUENCIES; 
+      allCounties = COUNTIES.filter(c=>c.id===CURRENT_COUNTY);
     }
 
     var candMap = {}; (cands||[]).forEach(c => candMap[c.code] = c);
@@ -5077,11 +5153,13 @@ async function generatePDF() {
       totalVotes: totalVotes,
       totalRegisteredVoters: totalRegisteredVoters,
       margin: margin,
-      // FIX 1: Pass candMap into buildHierarchy
-      hierarchy: buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap),
+      hierarchy: buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap, pos),
       isNational: isNational,
       missingForms: missingForms,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      // Pass the context so the PDF knows what level to print
+      posContext: pos,
+      targetConstId: targetConstId
     };
 
     buildPositionPDF(data);
@@ -5097,33 +5175,61 @@ async function generatePDF() {
 }
 
 // FIX 1: Add candMap as a parameter here
-function buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap) {
+function buildHierarchy(allCounties, allConsts, allWards, votesByWard, formsByWard, allStreams, candMap, pos) {
     var hierarchy = [];
-    (allCounties || []).forEach(county => {
-      var cConsts = (allConsts || []).filter(c => c.county_id === county.id);
-      var countyWardsArr = [];
-      cConsts.forEach(cst => {
-        var cWards = (allWards || []).filter(w => w.constituency_id === cst.id);
-        cWards.forEach(w => {
-          var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
-            name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
+    
+    if (pos === 'President') {
+        // National -> Counties
+        (allCounties || []).forEach(county => {
+          var cConsts = (allConsts || []).filter(c => c.county_id === county.id);
+          var countyCands = {};
+          cConsts.forEach(cst => {
+            var cWards = (allWards || []).filter(w => w.constituency_id === cst.id);
+            cWards.forEach(w => {
+               var candsInWard = votesByWard[w.id] || {};
+               for (var code in candsInWard) {
+                   if (!countyCands[code]) countyCands[code] = 0;
+                   countyCands[code] += candsInWard[code];
+               }
+            });
+          });
+          var leaderboard = Object.keys(countyCands).map(code => ({
+            name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: countyCands[code]
           })).sort((a,b)=>b.votes-a.votes);
-          if (wCands.length > 0) {
+          
+          if (leaderboard.length > 0) {
+            hierarchy.push({ countyName: county.name, candidates: leaderboard });
+          }
+        });
+    } else {
+        // County Scope -> Constituencies (or just the specific MP constituency)
+        var targetConsts = allConsts;
+        if (pos === 'MP') {
+            targetConsts = allConsts.filter(c => allWards.some(w => w.constituency_id === c.id));
+        }
+        
+        targetConsts.forEach(cst => {
+          var cWards = (allWards || []).filter(w => w.constituency_id === cst.id);
+          var countyWardsArr = [];
+          
+          cWards.forEach(w => {
+            var wCands = Object.keys(votesByWard[w.id]||{}).map(code => ({
+              name: candMap[code]?.name || 'Unknown', party: candMap[code]?.party || '', votes: votesByWard[w.id][code]
+            })).sort((a,b)=>b.votes-a.votes);
+            
+            // REMOVED the if statement here, so it shows the ward even if 0 votes
             countyWardsArr.push({
               constituencyName: cst.name, wardName: w.name, candidates: wCands, 
               totalVotes: wCands.reduce((s,c)=>s+c.votes, 0),
               formsCount: formsByWard[w.id] || 0, totalStreams: allStreams.filter(s => s.ward_id === w.id).length
             });
-          }
+          });
+          
+          hierarchy.push({ countyName: cst.name, subAreas: countyWardsArr });
         });
-      });
-      if (countyWardsArr.length > 0) {
-        hierarchy.push({ countyName: county.name, subAreas: countyWardsArr });
-      }
-    });
+    }
     return hierarchy;
 }
-
 function buildPositionPDF(data) {
   var jsPDF = window.jspdf.jsPDF;
   var doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
@@ -5131,8 +5237,6 @@ function buildPositionPDF(data) {
   var GREEN = [165, 207, 131], GREEN_DARK = [126, 174, 92], INK = [26, 26, 25], SLATE = [67, 86, 99], BORDER = [230, 230, 230];
   
   var timestamp = new Date(data.generatedAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  
-  // FIX 2: Wrap in String() to prevent uppercase crashes if data is somehow missing
   var hash = 'TH-' + String(data.position || 'UNK').substring(0,3).toUpperCase() + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
   // --- PAGE 1: COVER PAGE ---
@@ -5149,11 +5253,9 @@ function buildPositionPDF(data) {
   doc.text('TALLY REPORT', pageW / 2, 112, { align: 'center' });
   
   doc.setFontSize(16); doc.setTextColor(GREEN[0], GREEN[1], GREEN[2]);
-  // FIX 2: Wrap in String()
   doc.text(String(data.position || 'Unknown').toUpperCase(), pageW / 2, 140, { align: 'center' });
   
   doc.setFontSize(12); doc.setTextColor(255, 255, 255);
-  // FIX 2: Wrap in String()
   doc.text(String(data.county || 'Unknown').toUpperCase(), pageW / 2, 150, { align: 'center' });
   
   doc.setFontSize(10); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
@@ -5184,7 +5286,6 @@ function buildPositionPDF(data) {
     doc.setFontSize(16); doc.setTextColor(GREEN_DARK[0], GREEN_DARK[1], GREEN_DARK[2]); doc.text('+' + data.margin.toLocaleString(), pageW - marginR - 40, 58);
   }
   
-  // Turnout
   doc.setTextColor(INK[0], INK[1], INK[2]); doc.setFontSize(12); doc.setFont('helvetica', 'bold');
   doc.text('Total Valid Votes: ' + data.totalVotes.toLocaleString(), marginL, 85);
   if (data.totalRegisteredVoters > 0) {
@@ -5199,27 +5300,51 @@ function buildPositionPDF(data) {
   
   data.hierarchy.forEach(h => {
     if (currentY > pageH - 40) { doc.addPage(); currentY = 20; }
-    doc.setFontSize(14); doc.setTextColor(INK[0], INK[1], INK[2]); 
-    // FIX 2: Wrap in String()
-    doc.text(String(h.countyName || 'Unknown').toUpperCase(), marginL, currentY); currentY += 8;
     
-    h.subAreas.forEach(sub => {
-      if (currentY > pageH - 40) { doc.addPage(); currentY = 20; }
-      doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
-      doc.text(sub.constituencyName + ' > ' + sub.wardName + ' Ward (Forms: ' + sub.formsCount + '/' + sub.totalStreams + ')', marginL, currentY); currentY += 5;
-      
-      var rows = sub.candidates.slice(0, 3).map((c, idx) => [idx + 1, String(c.name), String(c.party), c.votes.toLocaleString(), sub.totalVotes > 0 ? ((c.votes/sub.totalVotes)*100).toFixed(1)+'%' : '0.0%']);
-      
-      doc.autoTable({
-        startY: currentY,
-        head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
-        styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: INK },
-        headStyles: { fontStyle: 'bold', fontSize: 7, fillColor: [245, 245, 245] },
-        margin: { left: marginL + 5, right: marginR },
-        columnStyles: { 0: { cellWidth: 10 }, 3: { halign: 'right' }, 4: { halign: 'right' } }
-      });
-      currentY = doc.lastAutoTable.finalY + 8;
-    });
+    // If National, print County Name. If County, print Constituency Name.
+    doc.setFontSize(14); doc.setTextColor(INK[0], INK[1], INK[2]); 
+    doc.text(String(h.countyName || 'Unknown').toUpperCase(), marginL, currentY); 
+    currentY += 8;
+
+    // If it has candidates (National View), print the leaderboard
+    if (h.candidates && h.candidates.length > 0) {
+        var rows = h.candidates.slice(0, 5).map((c, idx) => [idx + 1, String(c.name), String(c.party), c.votes.toLocaleString()]);
+        doc.autoTable({
+            startY: currentY,
+            head: [['', 'Candidate', 'Party', 'Votes']], body: rows, theme: 'plain',
+            styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: INK },
+            headStyles: { fontStyle: 'bold', fontSize: 7, fillColor: [245, 245, 245] },
+            margin: { left: marginL + 5, right: marginR },
+            columnStyles: { 0: { cellWidth: 10 }, 3: { halign: 'right' } }
+        });
+        currentY = doc.lastAutoTable.finalY + 8;
+    }
+    
+    // If it has subAreas (County View), print the wards
+    if (h.subAreas && h.subAreas.length > 0) {
+        h.subAreas.forEach(sub => {
+          if (currentY > pageH - 40) { doc.addPage(); currentY = 20; }
+          doc.setFontSize(11); doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]); 
+          doc.text(sub.constituencyName + ' > ' + sub.wardName + ' Ward (Forms: ' + sub.formsCount + '/' + sub.totalStreams + ')', marginL, currentY); currentY += 5;
+          
+          if (sub.candidates && sub.candidates.length > 0) {
+              var rows = sub.candidates.slice(0, 3).map((c, idx) => [idx + 1, String(c.name), String(c.party), c.votes.toLocaleString(), sub.totalVotes > 0 ? ((c.votes/sub.totalVotes)*100).toFixed(1)+'%' : '0.0%']);
+              doc.autoTable({
+                startY: currentY,
+                head: [['', 'Candidate', 'Party', 'Votes', 'Share']], body: rows, theme: 'plain',
+                styles: { font: 'helvetica', fontSize: 8, cellPadding: 2, textColor: INK },
+                headStyles: { fontStyle: 'bold', fontSize: 7, fillColor: [245, 245, 245] },
+                margin: { left: marginL + 5, right: marginR },
+                columnStyles: { 0: { cellWidth: 10 }, 3: { halign: 'right' }, 4: { halign: 'right' } }
+              });
+              currentY = doc.lastAutoTable.finalY + 8;
+          } else {
+              doc.setFontSize(9); doc.setTextColor(196, 69, 58);
+              doc.text('No votes recorded in this ward yet.', marginL + 5, currentY + 2);
+              currentY += 10;
+          }
+        });
+    }
   });
 
   // --- FINAL PAGE: MISSING FORMS ---
@@ -5239,7 +5364,6 @@ function buildPositionPDF(data) {
         if (y > pageH - 20) { doc.addPage(); y = 20; x = marginL; colCount = 0; }
         
         doc.setFontSize(8); doc.setTextColor(INK[0], INK[1], INK[2]);
-        // FIX 2: Wrap in String()
         doc.text(String(mf.ward || 'Unknown').substring(0, 15), x, y);
         doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
         doc.text(String(mf.centre || 'Unknown').substring(0, 15) + ' (' + String(mf.stream) + ')', x, y + 4);
@@ -5249,11 +5373,10 @@ function buildPositionPDF(data) {
     });
   }
 
-  // FIX 2: Wrap in String()
   var safePos = String(data.position || 'Position').replace(/\s+/g, ''); 
   var safeCon = String(data.county || 'County').replace(/\s+/g, '');
   doc.save('TallyHub-' + safePos + '-' + safeCon + '.pdf');
-  }
+}
 // ================================================================
 //  SETTINGS & CONFIG
 // ================================================================
