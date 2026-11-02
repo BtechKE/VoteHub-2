@@ -1765,27 +1765,45 @@ function isRaceScopeActive() {
   return false;
 }
 
-// Candidate pool scoped to the position's actual race geography
 function getRaceCandidates() {
   if (!OVERVIEW) return [];
   const pool = OVERVIEW.leaderboard || [];
-  if (SCOPE_MODE !== 'national') return pool;           // already scoped in loadOverview
-
   const pos = OVERVIEW.viewingPosition;
+
+  // 1. President is National (no geographic filtering needed)
   if (pos === 'President') return pool;
 
+  // 2. Governor, Senator, Women Rep (County-wide)
+  // If a National user is viewing this, they must select a county first.
   if (pos === 'Governor' || pos === 'Senator' || pos === 'Women Rep') {
-    if (!DRILL_COUNTY_ID) return [];
-    return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].county_id === DRILL_COUNTY_ID);
+    if (SCOPE_MODE === 'national' && !DRILL_COUNTY_ID) return [];
+    return pool; // If county scope, it's already correct.
   }
+
+  // 3. MP (Constituency-wide)
   if (pos === 'MP') {
+    // If the logged-in user is an MP, their pool is already scoped to their constituency.
+    if (SCOPE_MODE === 'constituency') return pool;
+
+    // If a Governor/National user is viewing, they MUST drill into a constituency.
     if (!DRILL_CONST_ID) return [];
+
+    // FILTER: Only return candidates who belong to the selected constituency
     return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].constituency_id === DRILL_CONST_ID);
   }
+
+  // 4. MCA (Ward-wide)
   if (pos === 'MCA') {
+    // If the logged-in user is an MCA, their pool is already scoped to their ward.
+    if (SCOPE_MODE === 'ward') return pool;
+
+    // If a Governor/MP/National user is viewing, they MUST drill into a ward.
     if (!DRILL_WARD) return [];
+
+    // FILTER: Only return candidates who belong to the selected ward
     return pool.filter(c => OVERVIEW.candMap[c.code] && OVERVIEW.candMap[c.code].ward_id === DRILL_WARD);
   }
+
   return pool;
 }
 
