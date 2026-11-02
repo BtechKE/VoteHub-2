@@ -2629,7 +2629,7 @@ function renderWarRoom() {
   }
   bc.innerHTML = bcHtml;
 
-  // 2. Filter Data exactly by the level
+  // 2. Filter Data
   var filtered = WAR_DATA.filter(function(item) {
       if (WAR_DRILL_LEVEL === 'constituency') return true; 
       if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
@@ -2645,8 +2645,28 @@ function renderWarRoom() {
 
   var html = '';
   
-  // 3. Render Cards
-  
+  // HELPER FUNCTION: Builds the stat blocks inside the card
+  function buildStats(badCount, missCount, silentCount, cleanCount, color, icon) {
+      var statsHtml = '<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px;">';
+      
+      if (badCount > 0) statsHtml += `<div style="background: rgba(196, 69, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #C4453A; line-height: 1;">${badCount}</div><div style="font-size: 9px; font-weight: 800; color: #C4453A; text-transform: uppercase; margin-top: 2px;">Anomaly</div></div>`;
+      
+      if (missCount > 0) statsHtml += `<div style="background: rgba(184, 134, 11, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #b8860b; line-height: 1;">${missCount}</div><div style="font-size: 9px; font-weight: 800; color: #b8860b; text-transform: uppercase; margin-top: 2px;">No Form</div></div>`;
+      
+      if (silentCount > 0) statsHtml += `<div style="background: rgba(107, 124, 147, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #6B7C93; line-height: 1;">${silentCount}</div><div style="font-size: 9px; font-weight: 800; color: #6B7C93; text-transform: uppercase; margin-top: 2px;">Silent</div></div>`;
+      
+      if (cleanCount > 0) statsHtml += `<div style="background: rgba(74, 124, 58, 0.1); border-radius: 8px; padding: 8px 4px; text-align: center;"><div style="font-size: 20px; font-weight: 900; color: #4A7C3A; line-height: 1;">${cleanCount}</div><div style="font-size: 9px; font-weight: 800; color: #4A7C3A; text-transform: uppercase; margin-top: 2px;">Clean</div></div>`;
+      
+      statsHtml += '</div>';
+      
+      // If all are 0 (shouldn't happen but just in case), show all clean
+      if (badCount === 0 && missCount === 0 && silentCount === 0 && cleanCount === 0) {
+          statsHtml = '<div style="font-size:12px; color:#4A7C3A; margin-top:12px; text-align:center;">All streams perfect</div>';
+      }
+      
+      return statsHtml;
+  }
+
   // LEVEL 1: CONSTITUENCIES
   if (WAR_DRILL_LEVEL === 'constituency') {
       var grouped = {};
@@ -2668,17 +2688,12 @@ function renderWarRoom() {
           var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
           var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="drillWarRoom('ward', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
-            <div class="card-head">
-              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Constituency</div></div>
-              <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
+          html += `<div class="card" onclick="drillWarRoom('ward', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+            <div class="card-head" style="margin-bottom: 4px;">
+              <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Constituency</div></div>
+              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
             </div>
-            <div style="font-size:12px; color:var(--slate); margin-top:8px;">
-              ${badCount > 0 ? `<strong style="color:#C4453A;">${badCount} Anomalies</strong><br>` : ''}
-              ${missCount > 0 ? `<strong style="color:#b8860b;">${missCount} Missing Forms</strong><br>` : ''}
-              ${silentCount > 0 ? `<strong style="color:#6B7C93;">${silentCount} Silent</strong><br>` : ''}
-              ${cleanCount > 0 ? `<span style="color:#4A7C3A;">${cleanCount} Clean</span>` : ''}
-            </div>
+            ${buildStats(badCount, missCount, silentCount, cleanCount, color, icon)}
           </div>`;
       }
   } 
@@ -2704,17 +2719,12 @@ function renderWarRoom() {
           var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
           var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="drillWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
-            <div class="card-head">
-              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Ward</div></div>
-              <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
+          html += `<div class="card" onclick="drillWarRoom('centre', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+            <div class="card-head" style="margin-bottom: 4px;">
+              <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Ward</div></div>
+              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
             </div>
-             <div style="font-size:12px; color:var(--slate); margin-top:8px;">
-              ${badCount > 0 ? `<strong style="color:#C4453A;">${badCount} Anomalies</strong><br>` : ''}
-              ${missCount > 0 ? `<strong style="color:#b8860b;">${missCount} Missing Forms</strong><br>` : ''}
-              ${silentCount > 0 ? `<strong style="color:#6B7C93;">${silentCount} Silent</strong><br>` : ''}
-              ${cleanCount > 0 ? `<span style="color:#4A7C3A;">${cleanCount} Clean</span>` : ''}
-            </div>
+            ${buildStats(badCount, missCount, silentCount, cleanCount, color, icon)}
           </div>`;
       }
   } 
@@ -2740,38 +2750,33 @@ function renderWarRoom() {
           var color = badCount > 0 ? '#C4453A' : (missCount > 0 ? '#b8860b' : (silentCount > 0 ? '#6B7C93' : '#4A7C3A'));
           var icon = badCount > 0 ? 'fa-triangle-exclamation' : (missCount > 0 ? 'fa-file-circle-xmark' : (silentCount > 0 ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="drillWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color};">
-            <div class="card-head">
-              <div><div class="card-name">${esc(g.name)}</div><div class="card-sub">Polling Centre</div></div>
-              <div style="color:${color}; font-size:20px;"><i class="fas ${icon}"></i></div>
+          html += `<div class="card" onclick="drillWarRoom('stream', '${id}', '${esc(g.name)}')" style="border-left: 4px solid ${color}; padding: 16px;">
+            <div class="card-head" style="margin-bottom: 4px;">
+              <div><div class="card-name" style="font-size: 17px;">${esc(g.name)}</div><div class="card-sub">Polling Centre</div></div>
+              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
             </div>
-             <div style="font-size:12px; color:var(--slate); margin-top:8px;">
-              ${badCount > 0 ? `<strong style="color:#C4453A;">${badCount} Anomalies</strong><br>` : ''}
-              ${missCount > 0 ? `<strong style="color:#b8860b;">${missCount} Missing Forms</strong><br>` : ''}
-              ${silentCount > 0 ? `<strong style="color:#6B7C93;">${silentCount} Silent</strong><br>` : ''}
-              ${cleanCount > 0 ? `<span style="color:#4A7C3A;">${cleanCount} Clean</span>` : ''}
-            </div>
+            ${buildStats(badCount, missCount, silentCount, cleanCount, color, icon)}
           </div>`;
       }
   } 
   
-  // LEVEL 4: STREAMS (WITH THE NEW READABLE GRID)
+  // LEVEL 4: STREAMS (Already looks good, just keeping it consistent)
   else if (WAR_DRILL_LEVEL === 'stream') {
       filtered.forEach(f => {
           var color = f.status === 'anomaly' ? '#C4453A' : (f.status === 'no-form' ? '#b8860b' : (f.status === 'silent' ? '#6B7C93' : '#4A7C3A'));
           var statusText = f.status === 'anomaly' ? 'MATH ANOMALY' : (f.status === 'no-form' ? 'MISSING FORM' : (f.status === 'silent' ? 'NOT REPORTED' : 'CLEAN'));
           var icon = f.status === 'anomaly' ? 'fa-triangle-exclamation' : (f.status === 'no-form' ? 'fa-file-circle-xmark' : (f.status === 'silent' ? 'fa-ghost' : 'fa-check-circle'));
           
-          html += `<div class="card" onclick="openWarRoomStream('${f.streamCode}')" style="border-left: 4px solid ${color};">
-            <div class="card-head">
-              <div><div class="card-name">${esc(f.streamCode)}</div><div class="card-sub" style="color:${color}; font-weight:700;">${statusText}</div></div>
-              <div style="color:${color}; font-size:22px;"><i class="fas ${icon}"></i></div>
+          html += `<div class="card" onclick="openWarRoomStream('${f.streamCode}')" style="border-left: 4px solid ${color}; padding: 16px;">
+            <div class="card-head" style="margin-bottom: 4px;">
+              <div><div class="card-name" style="font-size: 16px;">${esc(f.streamCode)}</div><div class="card-sub" style="color:${color}; font-weight:700;">${statusText}</div></div>
+              <div style="color:${color}; font-size:22px; background:${color}15; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%;"><i class="fas ${icon}"></i></div>
             </div>
             ${f.status !== 'silent' ? `
-            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:12px; background:rgba(0,0,0,0.02); padding:10px; border-radius:8px; text-align:center;">
-                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Cast</div><div style="font-size:16px; font-weight:800; color:var(--ink);">${f.cast}</div></div>
-                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Valid</div><div style="font-size:16px; font-weight:800; color:var(--green-dark);">${f.valid}</div></div>
-                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Reg</div><div style="font-size:16px; font-weight:800; color:var(--blue);">${f.registered}</div></div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:12px; background:rgba(0,0,0,0.03); padding:10px; border-radius:12px; text-align:center;">
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Cast</div><div style="font-size:18px; font-weight:900; color:var(--ink);">${f.cast}</div></div>
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Valid</div><div style="font-size:18px; font-weight:900; color:var(--green-dark);">${f.valid}</div></div>
+                <div><div style="font-size:10px; text-transform:uppercase; color:var(--slate); font-weight:700; margin-bottom:2px;">Reg</div><div style="font-size:18px; font-weight:900; color:var(--blue);">${f.registered}</div></div>
             </div>` : '<div style="font-size:12px; color:#6B7C93; margin-top:12px; font-style:italic; text-align:center; padding:10px;">Agent has not submitted results yet.</div>'}
           </div>`;
       });
@@ -2806,7 +2811,6 @@ function resetWarRoom() {
     WAR_DRILL_CENTRE = '';
     renderWarRoom();
 }
-
 function openWarRoomStream(streamCode) {
     var item = WAR_DATA.find(x => x.streamCode === streamCode);
     if (!item) return;
