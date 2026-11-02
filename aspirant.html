@@ -958,10 +958,26 @@ async function loadOverview(silent) {
     }
 
     // 2. Fetch Candidates & Results
-    let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS).order('code');
-    if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
+    // 2. Fetch Candidates & Results
+let candQuery = db.from('candidates').select('*').eq('position', VIEW_POS).order('code');
+
+// SURGICAL FIX: Filter based on the specific position, not just the scope
+if (VIEW_POS !== 'President' && SCOPE_MODE !== 'national') {
+    if (VIEW_POS === 'Governor' || VIEW_POS === 'Senator' || VIEW_POS === 'Women Rep') {
+        // County-wide positions use the county_id
         candQuery = candQuery.eq('county_id', USER.county);
+    } else if (VIEW_POS === 'MP') {
+        // MP uses constituency_id. We filter using the constituencies we already fetched.
+        const constIds = (consts || []).map(c => c.id);
+        if (constIds.length) candQuery = candQuery.in('constituency_id', constIds);
+        else candQuery = candQuery.eq('constituency_id', 'NONE'); // Safe fallback
+    } else if (VIEW_POS === 'MCA') {
+        // MCA uses ward_id. We filter using the wards we already fetched.
+        const wardIds = (wardsData || []).map(w => w.id);
+        if (wardIds.length) candQuery = candQuery.in('ward_id', wardIds);
+        else candQuery = candQuery.eq('ward_id', 'NONE'); // Safe fallback
     }
+}
     const cands = await fetchAll(() => candQuery);
 
     const activeStreamCodes = (streamsData || []).map(s => s.code);
