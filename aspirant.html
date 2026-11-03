@@ -2038,8 +2038,10 @@ function renderTrackerGrid() {
   }
 
   // --- LEVEL 2: WARDS ---
-  if (TRACKER_LEVEL === 'ward') {
-    var myWards = TRACKER_DATA.wards.filter(w => w.constituency_id === TRACKER_CONST_ID);
+    if (TRACKER_LEVEL === 'ward') {
+    // FIX: Fallback to USER.constituency if logged in as an MP
+    var targetConstId = TRACKER_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+    var myWards = TRACKER_DATA.wards.filter(w => w.constituency_id === targetConstId);
     title.textContent = TRACKER_CONST_NAME + ' Wards'; 
     sub.textContent = 'Submission progress by ward';
     count.textContent = myWards.length + ' wards';
@@ -2279,6 +2281,7 @@ function renderTrackerBreadcrumb() {
   if (!el) return;
   var parts = [];
 
+  // 1. Root Level
   if (SCOPE_MODE === 'national' || SCOPE_MODE === 'county') {
       parts.push({ label: 'All Constituencies', active: TRACKER_LEVEL === 'constituency', onclick: 'trackerResetDrill()' });
   } else if (SCOPE_MODE === 'constituency') {
@@ -2287,10 +2290,30 @@ function renderTrackerBreadcrumb() {
       parts.push({ label: 'All Centres', active: TRACKER_LEVEL === 'centre', onclick: 'trackerResetDrill()' });
   }
 
-  if (TRACKER_CONST_ID) parts.push({ label: TRACKER_CONST_NAME, active: TRACKER_LEVEL === 'ward', onclick: `trackerDrill('ward', '${TRACKER_CONST_ID}', '${TRACKER_CONST_NAME}')` });
+  // 2. THE FIX: Fallback for MP logged in
+  var currentConst = TRACKER_CONST_ID || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+  var currentConstName = TRACKER_CONST_NAME;
+  
+  // If we have an ID but no name, look it up in the loaded data
+  if (!currentConstName && currentConst && TRACKER_DATA && TRACKER_DATA.consts) {
+      var foundConst = TRACKER_DATA.consts.find(c => c.id === currentConst);
+      if (foundConst) currentConstName = foundConst.name;
+  }
+
+  // Add the Constituency to the breadcrumb if it exists
+  if (currentConst) {
+      parts.push({ 
+          label: currentConstName || 'Constituency', 
+          active: TRACKER_LEVEL === 'ward', 
+          onclick: `trackerDrill('ward', '${currentConst}', '${currentConstName || 'Constituency'}')` 
+      });
+  }
+
+  // 3. Deeper Levels
   if (TRACKER_WARD) parts.push({ label: TRACKER_WARD_NAME, active: TRACKER_LEVEL === 'centre', onclick: `trackerDrill('centre', '${TRACKER_WARD}', '${TRACKER_WARD_NAME}')` });
   if (TRACKER_CENTRE) parts.push({ label: TRACKER_CENTRE_NAME, active: TRACKER_LEVEL === 'stream', onclick: `trackerDrill('stream', '${TRACKER_CENTRE}', '${TRACKER_CENTRE_NAME}')` });
 
+  // 4. Render
   el.innerHTML = parts.map((p, i) => {
       var cls = 'bc-seg' + (p.active ? ' current' : '');
       var attr = p.active ? '' : `onclick="${p.onclick}"`;
@@ -2298,7 +2321,6 @@ function renderTrackerBreadcrumb() {
             `<button class="${cls}" ${attr}>${i===0 ? '<i class="fas fa-layer-group"></i> ' : ''}${esc(p.label)}</button>`;
   }).join('');
 }
-
 // ================================================================
 //  STREAM/CANDIDATE DETAIL & HELPERS
 // ================================================================
@@ -2706,9 +2728,9 @@ function renderWarRoom() {
   // 1. Render Breadcrumbs
   var bcHtml = `<button class="bc-seg ${WAR_DRILL_LEVEL === 'constituency' ? 'current' : ''}" onclick="resetWarRoom()">All Constituencies</button>`;
   
-  if (WAR_DRILL_CONST) {
-      var cName = OVERVIEW.consts.find(c=>c.id===WAR_DRILL_CONST)?.name || 'Constituency';
-      bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg ${WAR_DRILL_LEVEL === 'ward' ? 'current' : ''}" onclick="drillWarRoom('ward', '${WAR_DRILL_CONST}', '${esc(cName)}')">${esc(cName)}</button>`;
+   if (targetConst) {
+      var cName = OVERVIEW.consts.find(c=>c.id===targetConst)?.name || 'Constituency';
+      bcHtml += ` <i class="fas fa-chevron-right bc-sep"></i> <button class="bc-seg ${WAR_DRILL_LEVEL === 'ward' ? 'current' : ''}" onclick="drillWarRoom('ward', '${targetConst}', '${esc(cName)}')">${esc(cName)}</button>`;
   }
   if (WAR_DRILL_WARD) {
       var wName = OVERVIEW.wards.find(w=>w.id===WAR_DRILL_WARD)?.name || 'Ward';
@@ -2721,9 +2743,12 @@ function renderWarRoom() {
   bc.innerHTML = bcHtml;
 
   // 2. Filter Data
+   // 2. Filter Data
+  var targetConst = WAR_DRILL_CONST || (SCOPE_MODE === 'constituency' ? USER.constituency : '');
+  
   var filtered = WAR_DATA.filter(function(item) {
       if (WAR_DRILL_LEVEL === 'constituency') return true; 
-      if (WAR_DRILL_LEVEL === 'ward') return item.constId === WAR_DRILL_CONST;
+      if (WAR_DRILL_LEVEL === 'ward') return item.constId === targetConst; // <-- FIXED
       if (WAR_DRILL_LEVEL === 'centre') return item.wardId === WAR_DRILL_WARD;
       if (WAR_DRILL_LEVEL === 'stream') return item.centreId === WAR_DRILL_CENTRE;
       return true;
